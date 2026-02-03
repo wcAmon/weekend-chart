@@ -1,0 +1,25 @@
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Build outputs
+agent/build/*.exe
+*.exe
+
+# Database
+data/*.db
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

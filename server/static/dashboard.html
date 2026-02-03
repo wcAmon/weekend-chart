@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekend Chart - Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>我的電腦</h1>
+            <a href="#" id="logoutBtn">登出</a>
+        </div>
+
+        <div class="agent-list" id="agentList">
+            <div class="loading">載入中</div>
+        </div>
+
+        <div class="pair-section">
+            <div class="section-title">配對新電腦</div>
+            <p style="color: #888; font-size: 14px; text-align: center; margin-bottom: 10px;">
+                輸入 Agent 顯示的 6 位數配對碼
+            </p>
+            <div class="code-input" id="codeInput">
+                <input type="text" maxlength="1" data-index="0">
+                <input type="text" maxlength="1" data-index="1">
+                <input type="text" maxlength="1" data-index="2">
+                <input type="text" maxlength="1" data-index="3">
+                <input type="text" maxlength="1" data-index="4">
+                <input type="text" maxlength="1" data-index="5">
+            </div>
+            <button class="btn btn-primary" id="pairBtn">配對</button>
+            <p id="pairError" class="error-msg hidden"></p>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script>
+        // Check auth
+        fetch(apiUrl('/api/check-auth'))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.authenticated) {
+                    window.location.href = pageUrl('/');
+                }
+            });
+
+        // Load agents
+        function loadAgents() {
+            fetch(apiUrl('/api/agents'))
+                .then(r => r.json())
+                .then(agents => {
+                    const list = document.getElementById('agentList');
+                    list.textContent = '';
+
+                    if (agents.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'empty-state';
+                        empty.textContent = '尚未配對任何電腦';
+                        list.appendChild(empty);
+                        return;
+                    }
+
+                    agents.forEach(a => {
+                        const card = document.createElement('div');
+                        card.className = 'agent-card';
+
+                        const status = document.createElement('div');
+                        status.className = 'agent-status ' + (a.online ? 'online' : 'offline');
+
+                        const info = document.createElement('div');
+                        info.className = 'agent-info';
+                        info.style.cursor = 'pointer';
+                        info.onclick = () => openAgent(a.token);
+
+                        const name = document.createElement('div');
+                        name.className = 'agent-name';
+                        name.textContent = a.name;
+
+                        const time = document.createElement('div');
+                        time.className = 'agent-time';
+                        time.textContent = a.online ? '在線' : '離線 - ' + (a.last_seen || '從未連線');
+
+                        // Delete button only
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.textContent = '✕';
+                        deleteBtn.style.cssText = 'background:none;border:none;color:#e94560;font-size:18px;cursor:pointer;padding:8px;';
+                        deleteBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            if (confirm('確定要刪除「' + a.name + '」？')) {
+                                deleteAgent(a.id);
+                            }
+                        };
+
+                        info.appendChild(name);
+                        info.appendChild(time);
+                        card.appendChild(status);
+                        card.appendChild(info);
+                        card.appendChild(deleteBtn);
+                        list.appendChild(card);
+                    });
+                });
+        }
+        loadAgents();
+
+        // Refresh every 10 seconds
+        setInterval(loadAgents, 10000);
+
+        function openAgent(token) {
+            window.location.href = pageUrl('/chat-remote.html?agent=' + encodeURIComponent(token));
+        }
+
+        function deleteAgent(id) {
+            fetch(apiUrl('/api/agents'), {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    loadAgents();
+                }
+            });
+        }
+
+        // Logout
+        document.getElementById('logoutBtn').onclick = (e) => {
+            e.preventDefault();
+            fetch(apiUrl('/api/logout'), { method: 'POST' })
+                .then(() => window.location.href = pageUrl('/'));
+        };
+
+        // Pairing code input
+        const codeInputs = document.querySelectorAll('#codeInput input');
+        codeInputs.forEach((input, i) => {
+            input.addEventListener('input', (e) => {
+                if (e.target.value && i < 5) {
+                    codeInputs[i + 1].focus();
+                }
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !e.target.value && i > 0) {
+                    codeInputs[i - 1].focus();
+                }
+            });
+            input.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const paste = (e.clipboardData || window.clipboardData).getData('text');
+                const digits = paste.replace(/\D/g, '').slice(0, 6);
+                digits.split('').forEach((d, j) => {
+                    if (codeInputs[j]) codeInputs[j].value = d;
+                });
+                if (digits.length > 0) {
+                    codeInputs[Math.min(digits.length, 5)].focus();
+                }
+            });
+        });
+
+        // Pair
+        document.getElementById('pairBtn').onclick = () => {
+            const code = Array.from(codeInputs).map(i => i.value).join('');
+            if (code.length !== 6) {
+                showPairError('請輸入完整的 6 位數配對碼');
+                return;
+            }
+
+            fetch(apiUrl('/api/pair'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    codeInputs.forEach(i => i.value = '');
+                    loadAgents();
+                } else {
+                    showPairError(data.message);
+                }
+            });
+        };
+
+        function showPairError(msg) {
+            const el = document.getElementById('pairError');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 3000);
+        }
+    </script>
+</body>
+</html>

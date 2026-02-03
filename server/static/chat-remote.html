@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekend Chart - AI Browser Control</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body { overflow: hidden; }
+
+        .chat-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            height: 100vh;
+            max-width: 100%;
+            padding: 0;
+        }
+
+        @media (max-width: 900px) {
+            .chat-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+            }
+        }
+
+        /* Chat Panel */
+        .chat-panel {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #333;
+            background: #1a1a2e;
+        }
+
+        .chat-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #333;
+            background: #16213e;
+        }
+
+        .chat-header h1 {
+            flex: 1;
+            font-size: 16px;
+            color: #e94560;
+        }
+
+        .chat-header .nav-btn {
+            width: 36px;
+            height: 36px;
+            font-size: 16px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 85%;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #3b82f6;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant {
+            background: #374151;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.system {
+            background: #1f2937;
+            margin: 8px auto;
+            text-align: center;
+            font-size: 13px;
+            color: #9ca3af;
+            max-width: 90%;
+        }
+
+        .message.error {
+            background: #7f1d1d;
+            border: 1px solid #dc2626;
+        }
+
+        .message .actions {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-size: 13px;
+        }
+
+        .message .action-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 4px;
+            color: #9ca3af;
+        }
+
+        .message .action-item::before {
+            content: '\2713';
+            color: #4ade80;
+        }
+
+        .chat-input-bar {
+            padding: 12px 16px;
+            display: flex;
+            gap: 10px;
+            border-top: 1px solid #333;
+            background: #16213e;
+        }
+
+        .chat-input-bar input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #4a5568;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #fff;
+            font-size: 15px;
+        }
+
+        .chat-input-bar input:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+
+        .chat-input-bar button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #e94560;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .chat-input-bar button:hover {
+            background: #c73e54;
+        }
+
+        .chat-input-bar button:disabled {
+            background: #4a5568;
+            cursor: not-allowed;
+        }
+
+        /* Screenshot Panel */
+        .screenshot-panel {
+            display: flex;
+            flex-direction: column;
+            background: #000;
+        }
+
+        .screenshot-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: #16213e;
+            border-bottom: 1px solid #333;
+        }
+
+        .screenshot-header .status {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .screenshot-header .status.online {
+            color: #4ade80;
+        }
+
+        .screenshot-view {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            overflow: hidden;
+        }
+
+        .screenshot-view img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+        .screenshot-view .placeholder {
+            color: #666;
+            text-align: center;
+        }
+
+        /* Loading indicator */
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 8px 12px;
+            background: #374151;
+            border-radius: 12px;
+            width: fit-content;
+            margin-bottom: 16px;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #9ca3af;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Chat Panel (Left) -->
+        <div class="chat-panel">
+            <div class="chat-header">
+                <button class="nav-btn" id="backBtn" title="返回控制台">&larr;</button>
+                <h1>AI Browser Control</h1>
+                <button class="nav-btn" id="clearBtn" title="清除對話">&times;</button>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="message system">
+                    連接 Agent 後，用自然語言描述你想執行的操作。
+                </div>
+            </div>
+
+            <div class="chat-input-bar">
+                <input type="text" id="chatInput" placeholder="描述你想要執行的動作..." autocomplete="off">
+                <button id="sendBtn">發送</button>
+            </div>
+        </div>
+
+        <!-- Screenshot Panel (Right) -->
+        <div class="screenshot-panel">
+            <div class="screenshot-header">
+                <span>遠端瀏覽器</span>
+                <span class="status" id="connectionStatus">連線中...</span>
+            </div>
+
+            <div class="screenshot-view" id="screenshotView">
+                <div class="placeholder">等待截圖...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const agentToken = params.get('agent');
+
+        if (!agentToken) {
+            window.location.href = pageUrl('/dashboard.html');
+        }
+
+        let ws;
+        let isProcessing = false;
+
+        // Check auth first
+        fetch(apiUrl('/api/check-auth'))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.authenticated) {
+                    window.location.href = pageUrl('/');
+                    return;
+                }
+                connectWebSocket();
+            });
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.host + apiUrl('/ws/user'));
+
+            ws.onopen = () => {
+                updateStatus('已連接伺服器', true);
+                // Connect to specific agent
+                ws.send(JSON.stringify({
+                    type: 'connect_agent',
+                    data: { agent_token: agentToken }
+                }));
+            };
+
+            ws.onclose = () => {
+                updateStatus('連線中斷', false);
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = () => {
+                updateStatus('連線錯誤', false);
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                handleMessage(msg);
+            };
+        }
+
+        function handleMessage(msg) {
+            switch (msg.type) {
+                case 'agent_status':
+                    if (msg.online) {
+                        updateStatus('Agent 在線', true);
+                        // Request initial screenshot
+                        requestScreenshot();
+                    } else {
+                        updateStatus('Agent 離線', false);
+                    }
+                    break;
+
+                case 'screenshot':
+                    renderScreenshot(msg.image || (msg.data && msg.data.image));
+                    break;
+
+                case 'chat_response':
+                    handleChatResponse(msg);
+                    break;
+
+                case 'error':
+                    addMessage('system', msg.error, true);
+                    setProcessing(false);
+                    break;
+            }
+        }
+
+        function scrollToBottom() {
+            const messages = document.getElementById('chatMessages');
+            // Use requestAnimationFrame for smoother scrolling
+            requestAnimationFrame(() => {
+                messages.scrollTop = messages.scrollHeight;
+            });
+        }
+
+        function handleChatResponse(msg) {
+            // Remove typing indicator
+            removeTypingIndicator();
+
+            // Handle screenshot update
+            if (msg.screenshot) {
+                renderScreenshot(msg.screenshot);
+            }
+
+            // Handle text content
+            if (msg.content) {
+                addMessage(msg.role, msg.content, msg.is_error);
+            }
+
+            // Handle actions - add them to the last assistant message
+            if (msg.actions && msg.actions.length > 0) {
+                const messages = document.getElementById('chatMessages');
+                const lastAssistant = messages.querySelector('.message.assistant:last-of-type');
+                if (lastAssistant && !lastAssistant.querySelector('.actions')) {
+                    const actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'actions';
+
+                    msg.actions.forEach(function(action) {
+                        const actionItem = document.createElement('div');
+                        actionItem.className = 'action-item';
+                        actionItem.textContent = action.description;
+                        actionsDiv.appendChild(actionItem);
+                    });
+
+                    lastAssistant.appendChild(actionsDiv);
+                    scrollToBottom();
+                }
+            }
+
+            // If it's an assistant message with content, we might still be processing
+            // Only stop processing if we received actual text content
+            if (msg.role === 'assistant' && msg.content) {
+                setProcessing(false);
+            }
+        }
+
+        function addMessage(role, content, isError) {
+            isError = isError || false;
+            const messages = document.getElementById('chatMessages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message ' + role + (isError ? ' error' : '');
+            msgDiv.textContent = content;
+            messages.appendChild(msgDiv);
+            scrollToBottom();
+        }
+
+        function addTypingIndicator() {
+            const messages = document.getElementById('chatMessages');
+            const existing = messages.querySelector('.typing-indicator');
+            if (existing) return;
+
+            const indicator = document.createElement('div');
+            indicator.className = 'typing-indicator';
+
+            for (let i = 0; i < 3; i++) {
+                const span = document.createElement('span');
+                indicator.appendChild(span);
+            }
+
+            messages.appendChild(indicator);
+            scrollToBottom();
+        }
+
+        function removeTypingIndicator() {
+            const messages = document.getElementById('chatMessages');
+            const indicator = messages.querySelector('.typing-indicator');
+            if (indicator) indicator.remove();
+        }
+
+        function renderScreenshot(imageData) {
+            if (!imageData) return;
+
+            const view = document.getElementById('screenshotView');
+            // Clear existing content safely
+            while (view.firstChild) {
+                view.removeChild(view.firstChild);
+            }
+
+            const img = document.createElement('img');
+            // Handle both raw base64 and data URI formats
+            if (imageData.startsWith('data:')) {
+                img.src = imageData;
+            } else {
+                img.src = 'data:image/png;base64,' + imageData;
+            }
+            img.alt = 'Screenshot';
+            view.appendChild(img);
+        }
+
+        function requestScreenshot() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: 'request_screenshot' }));
+        }
+
+        function sendChatMessage(message) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addMessage('system', '未連接到伺服器', true);
+                return;
+            }
+
+            if (isProcessing) return;
+
+            // Add user message to UI
+            addMessage('user', message);
+
+            // Show typing indicator
+            addTypingIndicator();
+            setProcessing(true);
+
+            // Send to server
+            ws.send(JSON.stringify({
+                type: 'chat_message',
+                data: { message: message }
+            }));
+        }
+
+        function clearConversation() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+            ws.send(JSON.stringify({ type: 'clear_conversation' }));
+
+            // Clear UI safely
+            const messages = document.getElementById('chatMessages');
+            while (messages.firstChild) {
+                messages.removeChild(messages.firstChild);
+            }
+
+            const clearedMsg = document.createElement('div');
+            clearedMsg.className = 'message system';
+            clearedMsg.textContent = '對話已清除。';
+            messages.appendChild(clearedMsg);
+        }
+
+        function setProcessing(processing) {
+            isProcessing = processing;
+            const input = document.getElementById('chatInput');
+            const btn = document.getElementById('sendBtn');
+            input.disabled = processing;
+            btn.disabled = processing;
+        }
+
+        function updateStatus(text, connected) {
+            const el = document.getElementById('connectionStatus');
+            el.textContent = text;
+            el.className = 'status ' + (connected ? 'online' : '');
+        }
+
+        // Event handlers
+        document.getElementById('backBtn').onclick = function() {
+            window.location.href = pageUrl('/dashboard.html');
+        };
+
+        document.getElementById('clearBtn').onclick = function() {
+            if (confirm('確定要清除對話記錄嗎？')) {
+                clearConversation();
+            }
+        };
+
+        document.getElementById('sendBtn').onclick = function() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (message) {
+                sendChatMessage(message);
+                input.value = '';
+            }
+        };
+
+        document.getElementById('chatInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const message = e.target.value.trim();
+                if (message) {
+                    sendChatMessage(message);
+                    e.target.value = '';
+                }
+            }
+        });
+
+        // Auto-focus input
+        document.getElementById('chatInput').focus();
+    </script>
+</body>
+</html>

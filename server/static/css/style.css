@@ -1,0 +1,434 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Login Page */
+.login-box {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 40px 30px;
+    margin-top: 60px;
+}
+
+.login-box h1 {
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 24px;
+    color: #e94560;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    color: #aaa;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: #0f0f23;
+    color: #fff;
+    font-size: 16px;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #e94560;
+}
+
+.btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-primary {
+    background: #e94560;
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: #c73e54;
+}
+
+.btn-secondary {
+    background: #333;
+    color: #fff;
+}
+
+.btn-secondary:hover {
+    background: #444;
+}
+
+.error-msg {
+    color: #e94560;
+    text-align: center;
+    margin-top: 15px;
+    font-size: 14px;
+}
+
+/* Dashboard */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0;
+    border-bottom: 1px solid #333;
+    margin-bottom: 20px;
+}
+
+.header h1 {
+    font-size: 20px;
+}
+
+.header a {
+    color: #aaa;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.agent-list {
+    margin-bottom: 30px;
+}
+
+.agent-card {
+    background: #16213e;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.agent-card:hover {
+    background: #1f2b47;
+}
+
+.agent-status {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 12px;
+}
+
+.agent-status.online {
+    background: #4ade80;
+}
+
+.agent-status.offline {
+    background: #666;
+}
+
+.agent-info {
+    flex: 1;
+}
+
+.agent-name {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.agent-time {
+    font-size: 12px;
+    color: #888;
+}
+
+.agent-arrow {
+    color: #666;
+    font-size: 20px;
+}
+
+.section-title {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #333;
+}
+
+.pair-section {
+    background: #16213e;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.code-input {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 20px 0;
+}
+
+.code-input input {
+    width: 45px;
+    height: 55px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+    border: 2px solid #333;
+    border-radius: 8px;
+    background: #0f0f23;
+    color: #fff;
+}
+
+.code-input input:focus {
+    outline: none;
+    border-color: #e94560;
+}
+
+/* Remote Browser */
+.remote-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #333;
+}
+
+.nav-btn {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 8px;
+    background: #16213e;
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.nav-btn:hover {
+    background: #1f2b47;
+}
+
+.url-bar {
+    flex: 1;
+    display: flex;
+    background: #16213e;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.url-bar input {
+    flex: 1;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: #fff;
+    font-size: 14px;
+}
+
+.url-bar input:focus {
+    outline: none;
+}
+
+.url-bar button {
+    padding: 10px 14px;
+    border: none;
+    background: #e94560;
+    color: #fff;
+    cursor: pointer;
+}
+
+.browser-view {
+    background: #fff;
+    border-radius: 8px;
+    margin: 15px 0;
+    min-height: 400px;
+    overflow: auto;
+    position: relative;
+}
+
+.browser-view.screenshot-mode img {
+    width: 100%;
+    display: block;
+}
+
+.browser-view iframe {
+    width: 100%;
+    height: 500px;
+    border: none;
+}
+
+.mode-switch {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 0;
+    font-size: 14px;
+    color: #888;
+}
+
+.mode-switch input[type="range"] {
+    width: 100px;
+}
+
+.input-bar {
+    display: flex;
+    gap: 10px;
+    padding: 15px 0;
+    border-top: 1px solid #333;
+}
+
+.input-bar input {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: #16213e;
+    color: #fff;
+    font-size: 16px;
+}
+
+.input-bar button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    background: #e94560;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* Loading & Status */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #888;
+}
+
+.loading::after {
+    content: '';
+    width: 20px;
+    height: 20px;
+    border: 2px solid #333;
+    border-top-color: #e94560;
+    border-radius: 50%;
+    margin-left: 10px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.status-bar {
+    text-align: center;
+    padding: 8px;
+    font-size: 12px;
+    color: #888;
+}
+
+.status-bar.connected {
+    color: #4ade80;
+}
+
+.status-bar.disconnected {
+    color: #e94560;
+}
+
+/* Download Page */
+.download-box {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 40px 30px;
+    margin-top: 40px;
+    text-align: center;
+}
+
+.download-box h1 {
+    margin-bottom: 20px;
+    color: #e94560;
+}
+
+.download-box p {
+    color: #aaa;
+    margin-bottom: 30px;
+    line-height: 1.6;
+}
+
+.download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 32px;
+    background: #e94560;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 16px;
+    transition: background 0.2s;
+}
+
+.download-btn:hover {
+    background: #c73e54;
+}
+
+.instructions {
+    text-align: left;
+    margin-top: 40px;
+    padding-top: 30px;
+    border-top: 1px solid #333;
+}
+
+.instructions h2 {
+    font-size: 16px;
+    margin-bottom: 20px;
+}
+
+.instructions ol {
+    padding-left: 20px;
+    color: #aaa;
+    line-height: 2;
+}
+
+/* Utilities */
+.hidden {
+    display: none !important;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.mt-20 {
+    margin-top: 20px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+}

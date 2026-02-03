@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekend Chart - Remote Browser</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body { overflow: hidden; }
+        .container { max-width: 100%; height: 100vh; display: flex; flex-direction: column; }
+        .browser-view { flex: 1; margin: 10px 0; position: relative; display: flex; justify-content: center; align-items: center; background: #000; }
+        .browser-view iframe { width: 100%; height: 100%; border: none; }
+        .browser-view img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .click-overlay { position: absolute; cursor: crosshair; background: transparent; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="remote-header">
+            <button class="nav-btn" id="backBtn" title="返回控制台">←</button>
+            <button class="nav-btn" id="refreshBtn" title="重新整理">↻</button>
+            <div class="url-bar">
+                <input type="url" id="urlInput" placeholder="輸入網址...">
+                <button id="goBtn">前往</button>
+            </div>
+        </div>
+
+        <div class="status-bar" id="statusBar">連線中...</div>
+
+        <div class="browser-view" id="browserView">
+            <div class="loading">等待連接</div>
+        </div>
+
+        <div class="mode-switch">
+            <span>DOM</span>
+            <input type="range" min="0" max="1" value="1" id="modeSwitch">
+            <span>截圖</span>
+        </div>
+
+        <div class="input-bar">
+            <input type="text" id="textInput" placeholder="輸入文字...">
+            <button id="sendBtn">送出</button>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const agentToken = params.get('agent');
+
+        if (!agentToken) {
+            window.location.href = pageUrl('/dashboard.html');
+        }
+
+        let ws;
+        let currentMode = 'screenshot'; // 'dom' or 'screenshot'
+        let pendingInput = '';
+        let lastScreenshot = null; // Store for resize handling
+
+        // Check auth first
+        fetch(apiUrl('/api/check-auth'))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.authenticated) {
+                    window.location.href = pageUrl('/');
+                    return;
+                }
+                connectWebSocket();
+            });
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.host + apiUrl('/ws/user'));
+
+            ws.onopen = () => {
+                updateStatus('已連接伺服器', true);
+                // Connect to specific agent
+                ws.send(JSON.stringify({
+                    type: 'connect_agent',
+                    data: { agent_token: agentToken }
+                }));
+            };
+
+            ws.onclose = () => {
+                updateStatus('連線中斷', false);
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = () => {
+                updateStatus('連線錯誤', false);
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                handleMessage(msg);
+            };
+        }
+
+        function handleMessage(msg) {
+            switch (msg.type) {
+                case 'agent_status':
+                    if (msg.online) {
+                        updateStatus('Agent 在線', true);
+                        requestScreenshot();
+                    } else {
+                        updateStatus('Agent 離線', false);
+                    }
+                    break;
+
+                case 'dom_update':
+                    if (currentMode === 'dom') {
+                        renderDOM(msg);
+                    }
+                    document.getElementById('urlInput').value = msg.url || '';
+                    break;
+
+                case 'screenshot':
+                    lastScreenshot = msg;
+                    if (currentMode === 'screenshot') {
+                        renderScreenshot(msg);
+                    }
+                    document.getElementById('urlInput').value = msg.url || '';
+                    break;
+
+                case 'error':
+                    alert(msg.error);
+                    break;
+            }
+        }
+
+        function renderDOM(msg) {
+            const view = document.getElementById('browserView');
+            const iframe = document.createElement('iframe');
+            iframe.sandbox = 'allow-same-origin allow-scripts';
+
+            // Remove script tags from HTML to prevent warnings
+            let cleanHtml = msg.html || '';
+            cleanHtml = cleanHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+
+            iframe.srcdoc = cleanHtml;
+            view.textContent = '';
+            view.appendChild(iframe);
+
+            // Add click overlay for interaction - use original Chrome resolution
+            iframe.onload = () => {
+                addClickOverlay(1920, 1080);
+            };
+        }
+
+        function renderScreenshot(msg) {
+            const view = document.getElementById('browserView');
+            const img = document.createElement('img');
+            img.src = msg.image;
+            img.alt = 'Screenshot';
+            view.textContent = '';
+            view.appendChild(img);
+
+            // Wait for image to load, then add overlay
+            img.onload = () => {
+                addClickOverlay(img, msg.width, msg.height);
+            };
+        }
+
+        function addClickOverlay(img, originalWidth, originalHeight) {
+            const view = document.getElementById('browserView');
+            // Remove existing overlay if any
+            const existingOverlay = view.querySelector('.click-overlay');
+            if (existingOverlay) existingOverlay.remove();
+
+            // Get the actual rendered size of the image
+            const imgRect = img.getBoundingClientRect();
+            const viewRect = view.getBoundingClientRect();
+
+            const overlay = document.createElement('div');
+            overlay.className = 'click-overlay';
+
+            // Position overlay exactly over the image
+            overlay.style.width = imgRect.width + 'px';
+            overlay.style.height = imgRect.height + 'px';
+            overlay.style.left = (imgRect.left - viewRect.left) + 'px';
+            overlay.style.top = (imgRect.top - viewRect.top) + 'px';
+
+            overlay.onclick = (e) => {
+                const rect = overlay.getBoundingClientRect();
+                let x = e.clientX - rect.left;
+                let y = e.clientY - rect.top;
+
+                // Scale to original resolution
+                if (originalWidth && originalHeight) {
+                    x = Math.round(x * originalWidth / rect.width);
+                    y = Math.round(y * originalHeight / rect.height);
+                }
+
+                console.log('Click at:', x, y);
+                updateStatus('點擊 (' + x + ', ' + y + ')', true);
+                sendClickXY(x, y);
+            };
+            view.appendChild(overlay);
+        }
+
+        function getSelector(el) {
+            if (el.id) return '#' + el.id;
+            if (el.className) return el.tagName.toLowerCase() + '.' + el.className.split(' ').join('.');
+            return el.tagName.toLowerCase();
+        }
+
+        function sendClick(selector) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: 'click', selector: selector }));
+        }
+
+        function sendClickXY(x, y) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: 'click_xy', x: x, y: y }));
+        }
+
+        function sendNavigate(url) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (!url.startsWith('http')) url = 'https://' + url;
+            ws.send(JSON.stringify({ type: 'navigate', url: url }));
+        }
+
+        function sendInput(text) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                console.log('WebSocket not connected');
+                alert('未連接到伺服器');
+                return;
+            }
+            console.log('Sending input:', text);
+            ws.send(JSON.stringify({ type: 'input', value: text }));
+        }
+
+        function sendKey(key) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: 'key', key: key }));
+        }
+
+        function requestScreenshot() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: 'request_screenshot' }));
+        }
+
+        function updateStatus(text, connected) {
+            const el = document.getElementById('statusBar');
+            el.textContent = text;
+            el.className = 'status-bar ' + (connected ? 'connected' : 'disconnected');
+        }
+
+        // Event handlers
+        document.getElementById('backBtn').onclick = () => {
+            window.location.href = pageUrl('/dashboard.html');
+        };
+
+        document.getElementById('refreshBtn').onclick = () => {
+            requestScreenshot();
+        };
+
+        document.getElementById('goBtn').onclick = () => {
+            const url = document.getElementById('urlInput').value.trim();
+            if (url) sendNavigate(url);
+        };
+
+        document.getElementById('urlInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const url = e.target.value.trim();
+                if (url) sendNavigate(url);
+            }
+        });
+
+        document.getElementById('sendBtn').onclick = () => {
+            const text = document.getElementById('textInput').value;
+            if (text) {
+                sendInput(text);
+                document.getElementById('textInput').value = '';
+            }
+        };
+
+        document.getElementById('textInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const text = e.target.value;
+                if (text) {
+                    sendInput(text);
+                    e.target.value = '';
+                }
+            }
+        });
+
+        document.getElementById('modeSwitch').addEventListener('input', (e) => {
+            currentMode = e.target.value === '0' ? 'dom' : 'screenshot';
+            requestScreenshot();
+        });
+
+        // Handle window resize (phone rotation)
+        window.addEventListener('resize', () => {
+            if (currentMode === 'screenshot' && lastScreenshot) {
+                // Re-render to reposition overlay
+                setTimeout(() => renderScreenshot(lastScreenshot), 100);
+            }
+        });
+    </script>
+</body>
+</html>
