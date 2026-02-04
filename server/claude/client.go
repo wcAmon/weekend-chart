@@ -7,14 +7,14 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 )
 
 const (
-	apiEndpoint  = "https://api.openai.com/v1/chat/completions"
-	defaultModel = "gpt-4o"
-	maxTokens    = 4096
+	apiEndpoint     = "https://api.anthropic.com/v1/messages"
+	defaultModel    = "claude-sonnet-4-20250514"
+	anthropicVersion = "2023-06-01"
+	maxTokens       = 4096
 )
 
 // Client is the Claude API client
@@ -26,8 +26,8 @@ type Client struct {
 
 // NewClient creates a new Claude API client
 func NewClient() *Client {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	model := os.Getenv("OPENAI_MODEL")
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	model := os.Getenv("ANTHROPIC_MODEL")
 	if model == "" {
 		model = defaultModel
 	}
@@ -66,74 +66,11 @@ type ConversationMessage struct {
 	Content []ContentBlock `json:"content"`
 }
 
-// Tool represents a tool definition
+// Tool represents a tool definition for Anthropic API
 type Tool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"input_schema"`
-}
-
-type openAIContentPart struct {
-	Type     string           `json:"type"`
-	Text     string           `json:"text,omitempty"`
-	ImageURL *openAIImageURL  `json:"image_url,omitempty"`
-}
-
-type openAIImageURL struct {
-	URL    string `json:"url"`
-	Detail string `json:"detail,omitempty"`
-}
-
-type openAIFunction struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters,omitempty"`
-}
-
-type openAITool struct {
-	Type     string         `json:"type"`
-	Function openAIFunction `json:"function"`
-}
-
-type openAIToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
-}
-
-type openAIMessage struct {
-	Role       string           `json:"role"`
-	Content    interface{}      `json:"content,omitempty"`
-	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
-}
-
-// openAIChatRequest represents a request to the OpenAI Chat Completions API
-type openAIChatRequest struct {
-	Model     string         `json:"model"`
-	Messages  []openAIMessage `json:"messages"`
-	Tools     []openAITool    `json:"tools,omitempty"`
-	MaxTokens int            `json:"max_tokens,omitempty"`
-}
-
-// openAIChatResponse represents a response from the OpenAI Chat Completions API
-type openAIChatResponse struct {
-	ID      string `json:"id"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Message struct {
-			Role      string           `json:"role"`
-			Content   json.RawMessage  `json:"content"`
-			ToolCalls []openAIToolCall `json:"tool_calls,omitempty"`
-		} `json:"message"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"usage"`
 }
 
 // ToolCall represents a tool call from the model
@@ -202,172 +139,131 @@ type_text 的參數只能是「要顯示在畫面上的文字」！
 2. 點擊時，使用 get_page_state 返回的座標
 3. 座標系統：螢幕解析度 1920x1080`
 
-func toOpenAITools(tools []Tool) []openAITool {
-	if len(tools) == 0 {
-		return nil
-	}
-
-	out := make([]openAITool, 0, len(tools))
-	for _, t := range tools {
-		out = append(out, openAITool{
-			Type: "function",
-			Function: openAIFunction{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  t.InputSchema,
-			},
-		})
-	}
-	return out
+// Anthropic API request/response types
+type anthropicRequest struct {
+	Model     string                `json:"model"`
+	MaxTokens int                   `json:"max_tokens"`
+	System    string                `json:"system,omitempty"`
+	Messages  []anthropicMessage    `json:"messages"`
+	Tools     []Tool                `json:"tools,omitempty"`
 }
 
-func toOpenAIMessages(messages []ConversationMessage) []openAIMessage {
-	out := make([]openAIMessage, 0, len(messages)+1)
-	out = append(out, openAIMessage{
-		Role:    "system",
-		Content: SystemPrompt,
-	})
+type anthropicMessage struct {
+	Role    string        `json:"role"`
+	Content []interface{} `json:"content"`
+}
+
+type anthropicResponse struct {
+	ID           string `json:"id"`
+	Type         string `json:"type"`
+	Role         string `json:"role"`
+	Content      []anthropicContentBlock `json:"content"`
+	Model        string `json:"model"`
+	StopReason   string `json:"stop_reason"`
+	StopSequence string `json:"stop_sequence"`
+	Usage        struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+type anthropicContentBlock struct {
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
+}
+
+type anthropicTextContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type anthropicImageContent struct {
+	Type   string `json:"type"`
+	Source struct {
+		Type      string `json:"type"`
+		MediaType string `json:"media_type"`
+		Data      string `json:"data"`
+	} `json:"source"`
+}
+
+type anthropicToolUseContent struct {
+	Type  string          `json:"type"`
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
+type anthropicToolResultContent struct {
+	Type      string `json:"type"`
+	ToolUseID string `json:"tool_use_id"`
+	Content   string `json:"content"`
+	IsError   bool   `json:"is_error,omitempty"`
+}
+
+func toAnthropicMessages(messages []ConversationMessage) []anthropicMessage {
+	out := make([]anthropicMessage, 0, len(messages))
 
 	for _, msg := range messages {
-		hasToolUse := false
-		hasToolResult := false
-		hasImage := false
+		content := make([]interface{}, 0, len(msg.Content))
+
 		for _, block := range msg.Content {
 			switch block.Type {
-			case "tool_use":
-				hasToolUse = true
-			case "tool_result":
-				hasToolResult = true
+			case "text":
+				content = append(content, anthropicTextContent{
+					Type: "text",
+					Text: block.Text,
+				})
 			case "image":
-				hasImage = true
-			}
-		}
-
-		if hasToolResult && !hasToolUse {
-			for _, block := range msg.Content {
-				if block.Type != "tool_result" {
-					continue
+				if block.Source != nil {
+					img := anthropicImageContent{Type: "image"}
+					img.Source.Type = block.Source.Type
+					img.Source.MediaType = block.Source.MediaType
+					img.Source.Data = block.Source.Data
+					content = append(content, img)
 				}
-				out = append(out, openAIMessage{
-					Role:       "tool",
-					ToolCallID: block.ToolUseID,
-					Content:    block.Content,
+			case "tool_use":
+				content = append(content, anthropicToolUseContent{
+					Type:  "tool_use",
+					ID:    block.ID,
+					Name:  block.Name,
+					Input: block.Input,
+				})
+			case "tool_result":
+				content = append(content, anthropicToolResultContent{
+					Type:      "tool_result",
+					ToolUseID: block.ToolUseID,
+					Content:   block.Content,
+					IsError:   block.IsError,
 				})
 			}
-			continue
 		}
 
-		if hasToolUse {
-			var toolCalls []openAIToolCall
-			var textParts []string
-			for _, block := range msg.Content {
-				switch block.Type {
-				case "text":
-					textParts = append(textParts, block.Text)
-				case "tool_use":
-					tc := openAIToolCall{
-						ID:   block.ID,
-						Type: "function",
-					}
-					tc.Function.Name = block.Name
-					tc.Function.Arguments = string(block.Input)
-					toolCalls = append(toolCalls, tc)
-				}
-			}
-
-			var content interface{}
-			if len(textParts) > 0 {
-				content = strings.Join(textParts, "")
-			}
-
-			out = append(out, openAIMessage{
-				Role:      "assistant",
-				Content:   content,
-				ToolCalls: toolCalls,
-			})
-			continue
-		}
-
-		if hasImage {
-			parts := make([]openAIContentPart, 0, len(msg.Content))
-			for _, block := range msg.Content {
-				switch block.Type {
-				case "text":
-					parts = append(parts, openAIContentPart{
-						Type: "text",
-						Text: block.Text,
-					})
-				case "image":
-					if block.Source == nil {
-						continue
-					}
-					url := "data:" + block.Source.MediaType + ";base64," + block.Source.Data
-					parts = append(parts, openAIContentPart{
-						Type: "image_url",
-						ImageURL: &openAIImageURL{
-							URL:    url,
-							Detail: "auto",
-						},
-					})
-				}
-			}
-			out = append(out, openAIMessage{
+		if len(content) > 0 {
+			out = append(out, anthropicMessage{
 				Role:    msg.Role,
-				Content: parts,
+				Content: content,
 			})
-			continue
 		}
-
-		var textParts []string
-		for _, block := range msg.Content {
-			if block.Type == "text" {
-				textParts = append(textParts, block.Text)
-			}
-		}
-		out = append(out, openAIMessage{
-			Role:    msg.Role,
-			Content: strings.Join(textParts, ""),
-		})
 	}
 
 	return out
 }
 
-func parseContentText(raw json.RawMessage) string {
-	if len(raw) == 0 || string(raw) == "null" {
-		return ""
-	}
-
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
-	}
-
-	var parts []openAIContentPart
-	if err := json.Unmarshal(raw, &parts); err == nil {
-		var sb strings.Builder
-		for _, p := range parts {
-			if p.Type == "text" {
-				sb.WriteString(p.Text)
-			}
-		}
-		return sb.String()
-	}
-
-	return ""
-}
-
-// Chat sends a chat message to OpenAI with optional screenshot
+// Chat sends a chat message to Anthropic Claude API
 func (c *Client) Chat(messages []ConversationMessage, tools []Tool) (*ChatResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY not set")
+		return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
 	}
 
-	req := openAIChatRequest{
+	req := anthropicRequest{
 		Model:     c.model,
 		MaxTokens: maxTokens,
-		Messages:  toOpenAIMessages(messages),
-		Tools:     toOpenAITools(tools),
+		System:    SystemPrompt,
+		Messages:  toAnthropicMessages(messages),
+		Tools:     tools,
 	}
 
 	jsonBody, err := json.Marshal(req)
@@ -381,7 +277,8 @@ func (c *Client) Chat(messages []ConversationMessage, tools []Tool) (*ChatRespon
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("x-api-key", c.apiKey)
+	httpReq.Header.Set("anthropic-version", anthropicVersion)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -398,26 +295,30 @@ func (c *Client) Chat(messages []ConversationMessage, tools []Tool) (*ChatRespon
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	var apiResp openAIChatResponse
+	var apiResp anthropicResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	// Parse response content
 	chatResp := &ChatResponse{
+		StopReason: apiResp.StopReason,
 	}
-	chatResp.Usage.InputTokens = apiResp.Usage.PromptTokens
-	chatResp.Usage.OutputTokens = apiResp.Usage.CompletionTokens
+	chatResp.Usage.InputTokens = apiResp.Usage.InputTokens
+	chatResp.Usage.OutputTokens = apiResp.Usage.OutputTokens
 
-	if len(apiResp.Choices) > 0 {
-		msg := apiResp.Choices[0].Message
-		chatResp.TextContent = parseContentText(msg.Content)
-		for _, tc := range msg.ToolCalls {
-			input := json.RawMessage(tc.Function.Arguments)
+	for _, block := range apiResp.Content {
+		switch block.Type {
+		case "text":
+			if chatResp.TextContent != "" {
+				chatResp.TextContent += "\n"
+			}
+			chatResp.TextContent += block.Text
+		case "tool_use":
 			chatResp.ToolCalls = append(chatResp.ToolCalls, ToolCall{
-				ID:    tc.ID,
-				Name:  tc.Function.Name,
-				Input: input,
+				ID:    block.ID,
+				Name:  block.Name,
+				Input: block.Input,
 			})
 		}
 	}
