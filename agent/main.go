@@ -40,14 +40,16 @@ const (
 type Message struct {
 	Type string `json:"type"`
 	// Flat fields for different message types
-	URL       string `json:"url,omitempty"`
-	Selector  string `json:"selector,omitempty"`
-	X         int    `json:"x,omitempty"`
-	Y         int    `json:"y,omitempty"`
-	Value     string `json:"value,omitempty"`
-	Key       string `json:"key,omitempty"`
-	Direction string `json:"direction,omitempty"`
-	Amount    int    `json:"amount,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Selector    string `json:"selector,omitempty"`
+	X           int    `json:"x,omitempty"`
+	Y           int    `json:"y,omitempty"`
+	Value       string `json:"value,omitempty"`
+	Key         string `json:"key,omitempty"`
+	Direction   string `json:"direction,omitempty"`
+	Amount      int    `json:"amount,omitempty"`
+	OptionValue string `json:"option_value,omitempty"`
+	OptionText  string `json:"option_text,omitempty"`
 	// For responses from server
 	Data json.RawMessage `json:"data,omitempty"`
 }
@@ -351,6 +353,14 @@ func handleMessage(msg Message) {
 		log.Printf("滾動: %s %d", msg.Direction, amount)
 		if err := chrome.Scroll(msg.Direction, amount); err != nil {
 			log.Printf("滾動失敗: %v", err)
+		}
+		time.Sleep(300 * time.Millisecond)
+		sendCurrentState()
+
+	case "select_option":
+		log.Printf("選擇選項: selector=%s value=%s text=%s", msg.Selector, msg.OptionValue, msg.OptionText)
+		if err := chrome.SelectOption(msg.Selector, msg.OptionValue, msg.OptionText); err != nil {
+			log.Printf("選擇選項失敗: %v", err)
 		}
 		time.Sleep(300 * time.Millisecond)
 		sendCurrentState()

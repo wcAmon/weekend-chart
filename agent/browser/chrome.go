@@ -32,13 +32,14 @@ type PageState struct {
 
 // SimplifiedPageState contains essential page info for AI understanding
 type SimplifiedPageState struct {
-	URL          string      `json:"url"`
-	Title        string      `json:"title"`
-	FocusedElement string    `json:"focused_element,omitempty"`
-	Inputs       []InputInfo `json:"inputs,omitempty"`
-	Buttons      []ButtonInfo `json:"buttons,omitempty"`
-	Links        []LinkInfo  `json:"links,omitempty"`
-	Text         string      `json:"text,omitempty"` // Main visible text (truncated)
+	URL            string       `json:"url"`
+	Title          string       `json:"title"`
+	FocusedElement string       `json:"focused_element,omitempty"`
+	Inputs         []InputInfo  `json:"inputs,omitempty"`
+	Selects        []SelectInfo `json:"selects,omitempty"`
+	Buttons        []ButtonInfo `json:"buttons,omitempty"`
+	Links          []LinkInfo   `json:"links,omitempty"`
+	Text           string       `json:"text,omitempty"` // Main visible text (truncated)
 }
 
 type InputInfo struct {
@@ -65,6 +66,23 @@ type LinkInfo struct {
 	Href string `json:"href,omitempty"`
 	X    int    `json:"x"`
 	Y    int    `json:"y"`
+}
+
+type SelectInfo struct {
+	Name         string       `json:"name,omitempty"`
+	ID           string       `json:"id,omitempty"`
+	Label        string       `json:"label,omitempty"`
+	SelectedValue string      `json:"selected_value,omitempty"`
+	SelectedText  string      `json:"selected_text,omitempty"`
+	Options      []OptionInfo `json:"options"`
+	X            int          `json:"x"`
+	Y            int          `json:"y"`
+}
+
+type OptionInfo struct {
+	Value    string `json:"value"`
+	Text     string `json:"text"`
+	Selected bool   `json:"selected,omitempty"`
 }
 
 type Screenshot struct {
@@ -260,6 +278,62 @@ func (b *Browser) Scroll(direction string, amount int) error {
 	)
 }
 
+func (b *Browser) SelectOption(selector, value, text string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+	defer cancel()
+
+	// Build JavaScript to find and select the option
+	jsCode := fmt.Sprintf(`
+		(function() {
+			var sel = %q;
+			var optValue = %q;
+			var optText = %q;
+
+			// Find the select element
+			var select = null;
+			if (sel.startsWith('name=')) {
+				select = document.querySelector('select[name="' + sel.substring(5) + '"]');
+			} else if (sel.startsWith('id=')) {
+				select = document.querySelector('select#' + sel.substring(3));
+			} else {
+				// Try as CSS selector
+				select = document.querySelector(sel);
+			}
+
+			if (!select) {
+				return 'Select element not found: ' + sel;
+			}
+
+			// Find and select the option
+			for (var i = 0; i < select.options.length; i++) {
+				var opt = select.options[i];
+				if ((optValue && opt.value === optValue) || (optText && opt.text === optText)) {
+					select.selectedIndex = i;
+					// Trigger change event
+					select.dispatchEvent(new Event('change', { bubbles: true }));
+					return 'Selected: ' + opt.text;
+				}
+			}
+
+			return 'Option not found: value=' + optValue + ' text=' + optText;
+		})()
+	`, selector, value, text)
+
+	var result string
+	err := chromedp.Run(ctx,
+		chromedp.Evaluate(jsCode, &result),
+	)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("SelectOption result: %s", result)
+	return nil
+}
+
 func (b *Browser) GetDOM() (*PageState, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -330,9 +404,9 @@ func (b *Browser) GetSimplifiedPageState() (*SimplifiedPageState, error) {
 		const focusedInfo = focused && focused !== document.body ?
 			(focused.tagName + (focused.id ? '#' + focused.id : '') + (focused.name ? '[name=' + focused.name + ']' : '')) : '';
 
-		// Get inputs
+		// Get inputs (excluding select)
 		const inputs = [];
-		document.querySelectorAll('input, textarea, select').forEach(function(el) {
+		document.querySelectorAll('input, textarea').forEach(function(el) {
 			if (el.offsetParent === null) return; // Skip hidden
 			const rect = getRect(el);
 			inputs.push({
@@ -343,6 +417,33 @@ func (b *Browser) GetSimplifiedPageState() (*SimplifiedPageState, error) {
 				value: el.type === 'password' ? '***' : (el.value || ''),
 				label: getLabel(el),
 				focused: el === focused,
+				x: rect.x,
+				y: rect.y
+			});
+		});
+
+		// Get select elements with options
+		const selects = [];
+		document.querySelectorAll('select').forEach(function(el) {
+			if (el.offsetParent === null) return; // Skip hidden
+			const rect = getRect(el);
+			const options = [];
+			for (let i = 0; i < el.options.length; i++) {
+				const opt = el.options[i];
+				options.push({
+					value: opt.value,
+					text: opt.text,
+					selected: opt.selected
+				});
+			}
+			const selectedOpt = el.options[el.selectedIndex];
+			selects.push({
+				name: el.name || '',
+				id: el.id || '',
+				label: getLabel(el),
+				selected_value: selectedOpt ? selectedOpt.value : '',
+				selected_text: selectedOpt ? selectedOpt.text : '',
+				options: options,
 				x: rect.x,
 				y: rect.y
 			});
@@ -385,6 +486,7 @@ func (b *Browser) GetSimplifiedPageState() (*SimplifiedPageState, error) {
 		return {
 			focused_element: focusedInfo,
 			inputs: inputs,
+			selects: selects,
 			buttons: buttons,
 			links: links,
 			text: bodyText
@@ -429,6 +531,35 @@ func (b *Browser) GetSimplifiedPageState() (*SimplifiedPageState, error) {
 				if f, ok := m["x"].(float64); ok { input.X = int(f) }
 				if f, ok := m["y"].(float64); ok { input.Y = int(f) }
 				state.Inputs = append(state.Inputs, input)
+			}
+		}
+	}
+
+	// Parse selects
+	if selectsRaw, ok := result["selects"].([]interface{}); ok {
+		for _, v := range selectsRaw {
+			if m, ok := v.(map[string]interface{}); ok {
+				sel := SelectInfo{}
+				if s, ok := m["name"].(string); ok { sel.Name = s }
+				if s, ok := m["id"].(string); ok { sel.ID = s }
+				if s, ok := m["label"].(string); ok { sel.Label = s }
+				if s, ok := m["selected_value"].(string); ok { sel.SelectedValue = s }
+				if s, ok := m["selected_text"].(string); ok { sel.SelectedText = s }
+				if f, ok := m["x"].(float64); ok { sel.X = int(f) }
+				if f, ok := m["y"].(float64); ok { sel.Y = int(f) }
+				// Parse options
+				if optsRaw, ok := m["options"].([]interface{}); ok {
+					for _, optV := range optsRaw {
+						if optM, ok := optV.(map[string]interface{}); ok {
+							opt := OptionInfo{}
+							if s, ok := optM["value"].(string); ok { opt.Value = s }
+							if s, ok := optM["text"].(string); ok { opt.Text = s }
+							if b, ok := optM["selected"].(bool); ok { opt.Selected = b }
+							sel.Options = append(sel.Options, opt)
+						}
+					}
+				}
+				state.Selects = append(state.Selects, sel)
 			}
 		}
 	}

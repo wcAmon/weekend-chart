@@ -112,11 +112,33 @@ func GetBrowserTools() []Tool {
 		},
 		{
 			Name:        "get_page_state",
-			Description: "取得頁面狀態（表單欄位、按鈕、連結等），比截圖更快更準確。會返回所有輸入框的目前值、座標、focus狀態",
+			Description: "取得頁面狀態（表單欄位、下拉選單、按鈕、連結等），比截圖更快更準確。會返回所有輸入框的值、下拉選單的可選選項、座標、focus狀態",
 			InputSchema: json.RawMessage(`{
 				"type": "object",
 				"properties": {},
 				"required": []
+			}`),
+		},
+		{
+			Name:        "select_option",
+			Description: "選擇下拉選單的選項。需要提供選單的 name 或 id，以及要選擇的 value 或 text",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"selector": {
+						"type": "string",
+						"description": "下拉選單的 name 或 id (例如: name=country 或 id=mySelect)"
+					},
+					"value": {
+						"type": "string",
+						"description": "要選擇的選項 value 值"
+					},
+					"text": {
+						"type": "string",
+						"description": "要選擇的選項顯示文字 (如果沒提供 value)"
+					}
+				},
+				"required": ["selector"]
 			}`),
 		},
 	}
@@ -137,6 +159,13 @@ type TypeTextInput struct {
 // PressKeyInput represents the input for a press_key action
 type PressKeyInput struct {
 	Key string `json:"key"`
+}
+
+// SelectOptionInput represents the input for a select_option action
+type SelectOptionInput struct {
+	Selector string `json:"selector"`
+	Value    string `json:"value"`
+	Text     string `json:"text"`
 }
 
 // NavigateInput represents the input for a navigate action
@@ -171,6 +200,11 @@ type BrowserAction struct {
 	// For scroll
 	Direction string `json:"direction,omitempty"`
 	Amount    int    `json:"amount,omitempty"`
+
+	// For select_option
+	Selector    string `json:"selector,omitempty"`
+	OptionValue string `json:"option_value,omitempty"`
+	OptionText  string `json:"option_text,omitempty"`
 }
 
 // AgentInterface defines the interface for interacting with the agent
@@ -376,6 +410,35 @@ func (te *ToolExecutor) ExecuteTool(toolCall ToolCall) (ToolResult, string, erro
 		} else {
 			result.Content = pageState
 			actionDescription = "取得頁面狀態"
+		}
+
+	case "select_option":
+		var input SelectOptionInput
+		if err := json.Unmarshal(toolCall.Input, &input); err != nil {
+			result.Content = fmt.Sprintf("解析選擇參數失敗: %v", err)
+			result.IsError = true
+			return result, "", nil
+		}
+
+		fmt.Printf("[DEBUG] select_option: selector=%q value=%q text=%q\n", input.Selector, input.Value, input.Text)
+
+		action := BrowserAction{
+			Type:        "select_option",
+			Selector:    input.Selector,
+			OptionValue: input.Value,
+			OptionText:  input.Text,
+		}
+		if err := te.agent.SendAction(action); err != nil {
+			result.Content = fmt.Sprintf("選擇選項失敗: %v", err)
+			result.IsError = true
+		} else {
+			if input.Value != "" {
+				result.Content = fmt.Sprintf("已選擇選項 value=%s", input.Value)
+				actionDescription = fmt.Sprintf("選擇 %s", input.Value)
+			} else {
+				result.Content = fmt.Sprintf("已選擇選項 text=%s", input.Text)
+				actionDescription = fmt.Sprintf("選擇 %s", input.Text)
+			}
 		}
 
 	default:
