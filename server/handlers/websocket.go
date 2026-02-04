@@ -501,20 +501,21 @@ func (ap *AgentProxy) sendActionWithRetry(action claude.BrowserAction, maxAttemp
 
 // sendInputWithVerification sends input and verifies it was received correctly
 func (ap *AgentProxy) sendInputWithVerification(msg []byte, expectedValue string, maxAttempts int) error {
+	// Send input only ONCE
+	if !relay.GlobalHub.SendToAgent(ap.agentToken, msg) {
+		return errAgentNotConnected
+	}
+
+	// Wait for input to be processed
+	time.Sleep(600 * time.Millisecond)
+
+	// Verify the input (retry verification only, not the send)
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if !relay.GlobalHub.SendToAgent(ap.agentToken, msg) {
-			return errAgentNotConnected
-		}
-
-		// Wait for input to be processed
-		time.Sleep(600 * time.Millisecond)
-
-		// Verify the input was received correctly
 		pageStateData, err := relay.GlobalHub.RequestPageStateSync(ap.agentToken, 5*time.Second)
 		if err != nil {
-			log.Printf("Failed to verify input (attempt %d): %v", attempt, err)
+			log.Printf("Failed to get page state for verification (attempt %d): %v", attempt, err)
 			if attempt < maxAttempts {
-				time.Sleep(800 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 			return nil // Don't fail, just proceed
@@ -523,6 +524,7 @@ func (ap *AgentProxy) sendInputWithVerification(msg []byte, expectedValue string
 		// Parse page state to check focused input value
 		var pageState struct {
 			Inputs []struct {
+				Type    string `json:"type"`
 				Value   string `json:"value"`
 				Focused bool   `json:"focused"`
 			} `json:"inputs"`
@@ -535,6 +537,11 @@ func (ap *AgentProxy) sendInputWithVerification(msg []byte, expectedValue string
 		// Check if any focused input contains our expected value
 		for _, input := range pageState.Inputs {
 			if input.Focused {
+				// Skip verification for password fields (value is not readable)
+				if input.Type == "password" {
+					log.Printf("Input sent to password field, skipping verification")
+					return nil
+				}
 				// Check if the value ends with our expected input (it might have existing content)
 				if len(input.Value) >= len(expectedValue) {
 					suffix := input.Value[len(input.Value)-len(expectedValue):]
@@ -551,13 +558,13 @@ func (ap *AgentProxy) sendInputWithVerification(msg []byte, expectedValue string
 			}
 		}
 
-		log.Printf("Input verification failed (attempt %d), expected: %s", attempt, expectedValue)
+		log.Printf("Input verification check %d: value not found yet, expected: %s", attempt, expectedValue)
 		if attempt < maxAttempts {
-			time.Sleep(800 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 
-	log.Printf("Input verification failed after %d attempts, proceeding anyway", maxAttempts)
+	log.Printf("Input verification inconclusive after %d checks, proceeding anyway", maxAttempts)
 	return nil // Don't fail the action, let the AI see the result and decide
 }
 
