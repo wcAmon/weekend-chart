@@ -10,7 +10,7 @@
 
         .chat-container {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 28% 72%;
             height: 100vh;
             max-width: 100%;
             padding: 0;
@@ -205,6 +205,35 @@
             cursor: not-allowed;
         }
 
+        .screenshot-header .scroll-btns {
+            display: flex;
+            gap: 4px;
+        }
+
+        .screenshot-header .scroll-btn {
+            width: 32px;
+            height: 32px;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .screenshot-header .scroll-btn:hover {
+            background: #e94560;
+            border-color: #e94560;
+        }
+
+        .screenshot-header .scroll-btn:active {
+            transform: scale(0.95);
+        }
+
         .screenshot-view {
             flex: 1;
             display: flex;
@@ -346,6 +375,10 @@
         <div class="screenshot-panel">
             <div class="screenshot-header">
                 <span>遠端瀏覽器</span>
+                <div class="scroll-btns">
+                    <button class="scroll-btn" id="scrollUpBtn" title="向上滾動">↑</button>
+                    <button class="scroll-btn" id="scrollDownBtn" title="向下滾動">↓</button>
+                </div>
                 <button class="screenshot-btn" id="screenshotBtn" title="擷取截圖">📷 截圖</button>
                 <span class="status" id="connectionStatus">連線中...</span>
             </div>
@@ -725,6 +758,33 @@
         document.getElementById('screenshotBtn').onclick = function() {
             requestScreenshot();
         };
+
+        document.getElementById('scrollUpBtn').onclick = function() {
+            sendScroll('up');
+        };
+
+        document.getElementById('scrollDownBtn').onclick = function() {
+            sendScroll('down');
+        };
+
+        function sendScroll(direction) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addMessage('system', '未連接到伺服器', true);
+                return;
+            }
+
+            const agentToken = new URLSearchParams(window.location.search).get('agent');
+            if (!agentToken) return;
+
+            ws.send(JSON.stringify({
+                type: 'scroll',
+                direction: direction,
+                amount: 500
+            }));
+
+            // Request screenshot after scroll
+            setTimeout(requestScreenshot, 300);
+        }
 
         document.getElementById('sendBtn').onclick = function() {
             const input = document.getElementById('chatInput');

@@ -316,7 +316,7 @@ func handleUserMessage(uc *relay.UserConn, wsMsg WSMessage, rawMsg []byte) {
 		})
 		uc.Send <- resp
 
-	case "navigate", "click", "click_xy", "input", "key", "request_screenshot":
+	case "navigate", "click", "click_xy", "input", "key", "scroll", "request_screenshot":
 		// Forward to agent
 		agentToken := relay.GlobalHub.GetUserViewingAgent(uc.UserID)
 		if agentToken == "" {

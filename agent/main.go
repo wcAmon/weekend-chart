@@ -40,12 +40,14 @@ const (
 type Message struct {
 	Type string `json:"type"`
 	// Flat fields for different message types
-	URL      string `json:"url,omitempty"`
-	Selector string `json:"selector,omitempty"`
-	X        int    `json:"x,omitempty"`
-	Y        int    `json:"y,omitempty"`
-	Value    string `json:"value,omitempty"`
-	Key      string `json:"key,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Selector  string `json:"selector,omitempty"`
+	X         int    `json:"x,omitempty"`
+	Y         int    `json:"y,omitempty"`
+	Value     string `json:"value,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Direction string `json:"direction,omitempty"`
+	Amount    int    `json:"amount,omitempty"`
 	// For responses from server
 	Data json.RawMessage `json:"data,omitempty"`
 }
@@ -339,6 +341,18 @@ func handleMessage(msg Message) {
 		sendPageState()
 
 	case "request_screenshot":
+		sendCurrentState()
+
+	case "scroll":
+		amount := msg.Amount
+		if amount == 0 {
+			amount = 500
+		}
+		log.Printf("滾動: %s %d", msg.Direction, amount)
+		if err := chrome.Scroll(msg.Direction, amount); err != nil {
+			log.Printf("滾動失敗: %v", err)
+		}
+		time.Sleep(300 * time.Millisecond)
 		sendCurrentState()
 	}
 }

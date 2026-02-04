@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -237,6 +238,25 @@ func (b *Browser) SelectAll() error {
 				return 'no input focused';
 			})()
 		`, nil),
+	)
+}
+
+func (b *Browser) Scroll(direction string, amount int) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
+	defer cancel()
+
+	// Calculate scroll delta (negative for up, positive for down)
+	deltaY := amount
+	if direction == "up" {
+		deltaY = -amount
+	}
+
+	// Use JavaScript to scroll
+	return chromedp.Run(ctx,
+		chromedp.Evaluate(fmt.Sprintf(`window.scrollBy(0, %d)`, deltaY), nil),
 	)
 }
 
