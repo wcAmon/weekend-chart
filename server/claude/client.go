@@ -27,6 +27,9 @@ type Client struct {
 // NewClient creates a new Claude API client
 func NewClient() *Client {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("CLAUDE_API_KEY") // fallback
+	}
 	model := os.Getenv("ANTHROPIC_MODEL")
 	if model == "" {
 		model = defaultModel

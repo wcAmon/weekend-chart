@@ -28,9 +28,9 @@ func main() {
 		}
 	}
 
-	// Verify OpenAI API key is set
+	// Verify Anthropic API key is set
 	claudeClient := claude.NewClient()
-	log.Printf("OpenAI API key status: %s", claudeClient.GetAPIKey())
+	log.Printf("Anthropic API key status: %s", claudeClient.GetAPIKey())
 
 	// Initialize database
 	dbPath := filepath.Join(workDir, "..", "data", "weekend-chart.db")
