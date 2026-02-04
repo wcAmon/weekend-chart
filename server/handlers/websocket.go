@@ -451,8 +451,8 @@ func (ap *AgentProxy) SendAction(action claude.BrowserAction) error {
 		return errAgentNotConnected
 	}
 
-	// Wait a bit for the action to complete
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the action to complete (increased for network latency)
+	time.Sleep(1000 * time.Millisecond)
 	return nil
 }
 
@@ -590,7 +590,7 @@ func handleChatMessage(uc *relay.UserConn, agentToken, message string) {
 		// Get screenshot after actions and include it in the conversation for the model to see
 		var screenshotForClaude string
 		if hasNonScreenshotAction {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond) // Wait longer for action to complete visually
 			screenshotForClaude, _ = agentProxy.RequestScreenshot()
 		} else if newScreenshot != "" {
 			// Use the screenshot from take_screenshot tool
