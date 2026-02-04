@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -356,6 +357,44 @@ func handleUserMessage(uc *relay.UserConn, wsMsg WSMessage, rawMsg []byte) {
 			claude.GlobalConversationManager.Delete(uc.UserID, agentToken)
 			sendChatResponse(uc, "system", "對話已清除", "", nil)
 		}
+
+	case "direct_action":
+		// Handle direct action from UI (e.g., click on screenshot)
+		agentToken := relay.GlobalHub.GetUserViewingAgent(uc.UserID)
+		if agentToken == "" {
+			sendActionResult(uc, false, "", "請先選擇一個 Agent")
+			return
+		}
+
+		if !relay.GlobalHub.IsAgentOnline(agentToken) {
+			sendActionResult(uc, false, "", "Agent 離線中")
+			return
+		}
+
+		var actionData struct {
+			Action string `json:"action"`
+			X      int    `json:"x"`
+			Y      int    `json:"y"`
+		}
+		if err := json.Unmarshal(wsMsg.Data, &actionData); err != nil {
+			sendActionResult(uc, false, "", "Invalid action format")
+			return
+		}
+
+		// Build and send action to agent
+		actionMsg, _ := json.Marshal(map[string]interface{}{
+			"type": actionData.Action,
+			"x":    actionData.X,
+			"y":    actionData.Y,
+		})
+
+		log.Printf("User %d -> Agent %s: direct %s at (%d, %d)", uc.UserID, agentToken[:10], actionData.Action, actionData.X, actionData.Y)
+
+		if relay.GlobalHub.SendToAgent(agentToken, actionMsg) {
+			sendActionResult(uc, true, fmt.Sprintf("已點擊 (%d, %d)", actionData.X, actionData.Y), "")
+		} else {
+			sendActionResult(uc, false, "", "發送失敗")
+		}
 	}
 }
 
@@ -364,7 +403,17 @@ func sendError(uc *relay.UserConn, msg string) {
 		"type":  "error",
 		"error": msg,
 	})
-	uc.Send <- resp
+	safeSend(uc.Send, resp)
+}
+
+func sendActionResult(uc *relay.UserConn, success bool, message, errMsg string) {
+	resp, _ := json.Marshal(map[string]interface{}{
+		"type":    "action_result",
+		"success": success,
+		"message": message,
+		"error":   errMsg,
+	})
+	safeSend(uc.Send, resp)
 }
 
 func generatePairingCode() string {
