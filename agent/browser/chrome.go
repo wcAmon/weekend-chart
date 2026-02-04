@@ -11,6 +11,7 @@ import (
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 type Browser struct {
@@ -185,6 +186,33 @@ func (b *Browser) PressKey(key string) error {
 	ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
 	defer cancel()
 
+	// Map key names to chromedp keyboard keys
+	keyMap := map[string]string{
+		"Backspace": kb.Backspace,
+		"backspace": kb.Backspace,
+		"Delete":    kb.Delete,
+		"delete":    kb.Delete,
+		"Tab":       kb.Tab,
+		"tab":       kb.Tab,
+		"Enter":     kb.Enter,
+		"enter":     kb.Enter,
+		"Escape":    kb.Escape,
+		"escape":    kb.Escape,
+		"ArrowUp":   kb.ArrowUp,
+		"ArrowDown": kb.ArrowDown,
+		"ArrowLeft": kb.ArrowLeft,
+		"ArrowRight": kb.ArrowRight,
+	}
+
+	if mappedKey, ok := keyMap[key]; ok {
+		log.Printf("PressKey: mapping %q to kb constant", key)
+		return chromedp.Run(ctx,
+			chromedp.KeyEvent(mappedKey),
+		)
+	}
+
+	// For unmapped keys, try direct key event
+	log.Printf("PressKey: using direct key %q", key)
 	return chromedp.Run(ctx,
 		chromedp.KeyEvent(key),
 	)

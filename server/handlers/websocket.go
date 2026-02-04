@@ -392,7 +392,7 @@ func sendChatResponse(uc *relay.UserConn, role, content, screenshot string, acti
 		Screenshot: screenshot,
 		Actions:    actions,
 	})
-	uc.Send <- resp
+	safeSend(uc.Send, resp)
 }
 
 func sendChatError(uc *relay.UserConn, message string) {
@@ -402,7 +402,21 @@ func sendChatError(uc *relay.UserConn, message string) {
 		Content: message,
 		IsError: true,
 	})
-	uc.Send <- resp
+	safeSend(uc.Send, resp)
+}
+
+// safeSend sends to channel without panicking if closed
+func safeSend(ch chan []byte, data []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Channel send failed (connection closed): %v", r)
+		}
+	}()
+	select {
+	case ch <- data:
+	default:
+		log.Printf("Channel full or closed, dropping message")
+	}
 }
 
 // AgentProxy implements claude.AgentInterface for tool execution

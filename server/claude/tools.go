@@ -3,6 +3,7 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // GetBrowserTools returns the tool definitions for browser control
@@ -197,6 +198,8 @@ func (te *ToolExecutor) ExecuteTool(toolCall ToolCall) (ToolResult, string, erro
 
 	var actionDescription string
 
+	fmt.Printf("[DEBUG] ExecuteTool called: name=%q input=%s\n", toolCall.Name, string(toolCall.Input))
+
 	switch toolCall.Name {
 	case "take_screenshot":
 		screenshot, err := te.agent.RequestScreenshot()
@@ -241,28 +244,36 @@ func (te *ToolExecutor) ExecuteTool(toolCall ToolCall) (ToolResult, string, erro
 			return result, "", nil
 		}
 
+		fmt.Printf("[DEBUG] type_text received: %q (len=%d)\n", input.Text, len(input.Text))
+
 		// Safety: detect if AI mistakenly tried to type a key name
-		keyNames := map[string]bool{
-			"Tab": true, "tab": true, "TAB": true,
-			"Enter": true, "enter": true, "ENTER": true,
-			"Backspace": true, "backspace": true, "BACKSPACE": true,
-			"Escape": true, "escape": true, "ESC": true, "esc": true,
-			"Delete": true, "delete": true, "DEL": true, "del": true,
-			"ArrowUp": true, "ArrowDown": true, "ArrowLeft": true, "ArrowRight": true,
+		keyNames := map[string]string{
+			"tab": "Tab", "TAB": "Tab", "Tab": "Tab",
+			"enter": "Enter", "ENTER": "Enter", "Enter": "Enter",
+			"backspace": "Backspace", "BACKSPACE": "Backspace", "Backspace": "Backspace",
+			"escape": "Escape", "ESCAPE": "Escape", "Escape": "Escape", "esc": "Escape", "ESC": "Escape",
+			"delete": "Delete", "DELETE": "Delete", "Delete": "Delete", "del": "Delete", "DEL": "Delete",
+			"arrowup": "ArrowUp", "ArrowUp": "ArrowUp",
+			"arrowdown": "ArrowDown", "ArrowDown": "ArrowDown",
+			"arrowleft": "ArrowLeft", "ArrowLeft": "ArrowLeft",
+			"arrowright": "ArrowRight", "ArrowRight": "ArrowRight",
 		}
 
-		if keyNames[input.Text] {
+		// Trim whitespace and check for key name
+		trimmedText := strings.TrimSpace(input.Text)
+		if keyName, isKey := keyNames[trimmedText]; isKey {
+			fmt.Printf("[DEBUG] Auto-converting type_text to press_key: %q -> %q\n", input.Text, keyName)
 			// Convert to press_key action instead
 			action := BrowserAction{
 				Type: "key",
-				Key:  input.Text,
+				Key:  keyName,
 			}
 			if err := te.agent.SendAction(action); err != nil {
 				result.Content = fmt.Sprintf("按鍵失敗: %v", err)
 				result.IsError = true
 			} else {
-				result.Content = fmt.Sprintf("已按下按鍵: %s (自動轉換)", input.Text)
-				actionDescription = fmt.Sprintf("按下 %s", input.Text)
+				result.Content = fmt.Sprintf("已按下按鍵: %s (自動轉換)", keyName)
+				actionDescription = fmt.Sprintf("按下 %s", keyName)
 			}
 		} else {
 			action := BrowserAction{
@@ -285,6 +296,8 @@ func (te *ToolExecutor) ExecuteTool(toolCall ToolCall) (ToolResult, string, erro
 			result.IsError = true
 			return result, "", nil
 		}
+
+		fmt.Printf("[DEBUG] press_key received: %q\n", input.Key)
 
 		action := BrowserAction{
 			Type: "key",
