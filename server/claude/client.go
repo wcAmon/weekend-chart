@@ -171,7 +171,8 @@ type_text 只能輸入純文字，絕對不能包含 "Tab"、"Enter" 等按鍵�
   5. press_key("Enter") 或 click 登入按鈕
 
 可用工具：
-- take_screenshot: 截取當前畫面
+- get_page_state: 【推薦】取得頁面狀態（輸入框的值、座標、focus狀態），比截圖更快更準確
+- take_screenshot: 截取當前畫面（需要看視覺內容時使用）
 - click: 點擊指定座標 (x, y)
 - type_text: 輸入純文字（不含任何按鍵！）
 - press_key: 按下按鍵（Tab、Enter、Escape、Backspace 等）
@@ -181,11 +182,16 @@ type_text 只能輸入純文字，絕對不能包含 "Tab"、"Enter" 等按鍵�
 
 清除輸入框：click 該欄位 → select_all → press_key("Backspace")
 
+操作流程建議：
+1. 先用 get_page_state 了解頁面有哪些輸入框和按鈕
+2. 根據返回的座標執行 click 和 type_text
+3. 操作後再用 get_page_state 確認結果（檢查輸入框的 value 是否正確）
+4. 只在需要看視覺內容時才用 take_screenshot
+
 一般規則：
 1. 執行動作前，先描述你看到了什麼以及你要做什麼
-2. 點擊時，精確計算目標元素的中心座標
-3. 執行動作後，截取新的截圖確認結果
-4. 座標系統：螢幕解析度 1920x1080`
+2. 點擊時，使用 get_page_state 返回的座標
+3. 座標系統：螢幕解析度 1920x1080`
 
 func toOpenAITools(tools []Tool) []openAITool {
 	if len(tools) == 0 {

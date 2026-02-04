@@ -36,12 +36,24 @@ type Hub struct {
 	// Screenshot request channels (key: request_id)
 	screenshotRequests map[string]chan string
 
+	// Page state cache (key: agent_token)
+	pageStateCache map[string]*PageStateCache
+
+	// Page state request channels (key: request_id)
+	pageStateRequests map[string]chan json.RawMessage
+
 	mu sync.RWMutex
 }
 
 // ScreenshotCache stores the latest screenshot for an agent
 type ScreenshotCache struct {
 	Data      string
+	UpdatedAt time.Time
+}
+
+// PageStateCache stores the latest page state for an agent
+type PageStateCache struct {
+	Data      json.RawMessage
 	UpdatedAt time.Time
 }
 
@@ -64,6 +76,8 @@ var GlobalHub = &Hub{
 	userViewingAgent:   make(map[int64]string),
 	screenshotCache:    make(map[string]*ScreenshotCache),
 	screenshotRequests: make(map[string]chan string),
+	pageStateCache:     make(map[string]*PageStateCache),
+	pageStateRequests:  make(map[string]chan json.RawMessage),
 }
 
 // Agent methods
@@ -315,4 +329,72 @@ func (h *Hub) ClearAgentScreenshotCache(agentToken string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.screenshotCache, agentToken)
+}
+
+// Page state methods
+
+// UpdatePageStateCache updates the cached page state for an agent
+func (h *Hub) UpdatePageStateCache(agentToken string, data json.RawMessage) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.pageStateCache[agentToken] = &PageStateCache{
+		Data:      data,
+		UpdatedAt: time.Now(),
+	}
+
+	// Check if there's a pending request for this agent
+	prefix := agentToken + ":"
+	for reqID, ch := range h.pageStateRequests {
+		if len(reqID) >= len(prefix) && reqID[:len(prefix)] == prefix {
+			select {
+			case ch <- data:
+			default:
+			}
+		}
+	}
+}
+
+// GetCachedPageState returns the cached page state for an agent
+func (h *Hub) GetCachedPageState(agentToken string) (json.RawMessage, time.Time, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if cache, ok := h.pageStateCache[agentToken]; ok {
+		return cache.Data, cache.UpdatedAt, true
+	}
+	return nil, time.Time{}, false
+}
+
+// RequestPageStateSync requests page state and waits for the response
+func (h *Hub) RequestPageStateSync(agentToken string, timeout time.Duration) (json.RawMessage, error) {
+	// Create a unique request ID
+	reqID := fmt.Sprintf("%s:%d", agentToken, time.Now().UnixNano())
+	respChan := make(chan json.RawMessage, 1)
+
+	// Register the request
+	h.mu.Lock()
+	h.pageStateRequests[reqID] = respChan
+	h.mu.Unlock()
+
+	// Cleanup on exit
+	defer func() {
+		h.mu.Lock()
+		delete(h.pageStateRequests, reqID)
+		h.mu.Unlock()
+	}()
+
+	// Send page state request to agent
+	reqMsg, _ := json.Marshal(map[string]string{"type": "get_page_state"})
+	if !h.SendToAgent(agentToken, reqMsg) {
+		return nil, fmt.Errorf("agent not connected")
+	}
+
+	// Wait for response with timeout
+	select {
+	case pageState := <-respChan:
+		return pageState, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("page state request timed out")
+	}
 }

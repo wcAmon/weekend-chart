@@ -334,6 +334,10 @@ func handleMessage(msg Message) {
 		time.Sleep(200 * time.Millisecond)
 		sendCurrentState()
 
+	case "get_page_state":
+		log.Printf("取得頁面狀態")
+		sendPageState()
+
 	case "request_screenshot":
 		sendCurrentState()
 	}
@@ -408,6 +412,41 @@ func sendCurrentState() {
 	log.Printf("sendCurrentState: 準備截圖")
 	sendScreenshot()
 	log.Printf("sendCurrentState: 完成")
+}
+
+func sendPageState() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("sendPageState panic: %v", r)
+		}
+	}()
+
+	if conn == nil || chrome == nil {
+		log.Printf("sendPageState: conn 或 chrome 為 nil")
+		return
+	}
+
+	state, err := chrome.GetSimplifiedPageState()
+	if err != nil {
+		log.Printf("取得頁面狀態失敗: %v", err)
+		return
+	}
+
+	msg, err := json.Marshal(map[string]interface{}{
+		"type":  "page_state",
+		"state": state,
+	})
+	if err != nil {
+		log.Printf("JSON 序列化失敗: %v", err)
+		return
+	}
+
+	log.Printf("sendPageState: 發送中... (size=%d)", len(msg))
+	if err := safeWriteMessage(websocket.TextMessage, msg); err != nil {
+		log.Printf("sendPageState: 發送失敗: %v", err)
+	} else {
+		log.Printf("sendPageState: 發送成功")
+	}
 }
 
 func generateToken() string {

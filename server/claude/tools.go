@@ -109,6 +109,15 @@ func GetBrowserTools() []Tool {
 				"required": []
 			}`),
 		},
+		{
+			Name:        "get_page_state",
+			Description: "取得頁面狀態（表單欄位、按鈕、連結等），比截圖更快更準確。會返回所有輸入框的目前值、座標、focus狀態",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {},
+				"required": []
+			}`),
+		},
 	}
 }
 
@@ -166,6 +175,7 @@ type BrowserAction struct {
 // AgentInterface defines the interface for interacting with the agent
 type AgentInterface interface {
 	RequestScreenshot() (string, error)
+	RequestPageState() (string, error)
 	SendAction(action BrowserAction) error
 }
 
@@ -318,6 +328,16 @@ func (te *ToolExecutor) ExecuteTool(toolCall ToolCall) (ToolResult, string, erro
 		} else {
 			result.Content = "已全選輸入框內容"
 			actionDescription = "全選"
+		}
+
+	case "get_page_state":
+		pageState, err := te.agent.RequestPageState()
+		if err != nil {
+			result.Content = fmt.Sprintf("取得頁面狀態失敗: %v", err)
+			result.IsError = true
+		} else {
+			result.Content = pageState
+			actionDescription = "取得頁面狀態"
 		}
 
 	default:

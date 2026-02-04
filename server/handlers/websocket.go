@@ -199,6 +199,17 @@ func handleAgentMessage(ac *relay.AgentConn, wsMsg WSMessage, rawMsg []byte) {
 	case "dom_update":
 		// Forward to connected user
 		relay.GlobalHub.BroadcastToAgentUsers(ac.Token, rawMsg)
+
+	case "page_state":
+		// Cache the page state
+		var pageStateMsg struct {
+			Type  string          `json:"type"`
+			State json.RawMessage `json:"state"`
+		}
+		if err := json.Unmarshal(rawMsg, &pageStateMsg); err == nil && pageStateMsg.State != nil {
+			relay.GlobalHub.UpdatePageStateCache(ac.Token, pageStateMsg.State)
+			log.Printf("Page state cached for agent %s", ac.Token[:10])
+		}
 	}
 }
 
@@ -402,6 +413,14 @@ type AgentProxy struct {
 
 func (ap *AgentProxy) RequestScreenshot() (string, error) {
 	return relay.GlobalHub.RequestScreenshotSync(ap.agentToken, 15*time.Second)
+}
+
+func (ap *AgentProxy) RequestPageState() (string, error) {
+	data, err := relay.GlobalHub.RequestPageStateSync(ap.agentToken, 10*time.Second)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func (ap *AgentProxy) SendAction(action claude.BrowserAction) error {
