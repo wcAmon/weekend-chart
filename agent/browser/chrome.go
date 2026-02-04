@@ -98,6 +98,7 @@ func New() (*Browser, error) {
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("force-device-scale-factor", "1"),
 		chromedp.WindowSize(1920, 1080),
 	)
 
@@ -605,6 +606,15 @@ func (b *Browser) GetScreenshot() (*Screenshot, error) {
 	var url string
 	var buf []byte
 
+	// Use clip to ensure exact viewport dimensions
+	clip := &page.Viewport{
+		X:      0,
+		Y:      0,
+		Width:  1920,
+		Height: 1080,
+		Scale:  1,
+	}
+
 	err := chromedp.Run(ctx,
 		chromedp.Location(&url),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -612,6 +622,7 @@ func (b *Browser) GetScreenshot() (*Screenshot, error) {
 			buf, err = page.CaptureScreenshot().
 				WithFormat(page.CaptureScreenshotFormatJpeg).
 				WithQuality(80).
+				WithClip(clip).
 				Do(ctx)
 			return err
 		}),

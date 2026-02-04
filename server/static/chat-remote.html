@@ -633,22 +633,28 @@
             }
 
             const img = e.target;
+
+            // Use the image's natural dimensions (actual pixel size)
+            const naturalWidth = img.naturalWidth || 1920;
+            const naturalHeight = img.naturalHeight || 1080;
+
+            // Get the displayed size and position
             const rect = img.getBoundingClientRect();
 
             // Calculate the actual rendered image size (accounting for object-fit: contain)
-            const imgAspect = screenshotWidth / screenshotHeight;
+            const imgAspect = naturalWidth / naturalHeight;
             const containerAspect = rect.width / rect.height;
 
             let renderedWidth, renderedHeight, offsetX, offsetY;
 
             if (imgAspect > containerAspect) {
-                // Image is wider - letterbox top/bottom
+                // Image is wider than container - fits width, letterbox top/bottom
                 renderedWidth = rect.width;
                 renderedHeight = rect.width / imgAspect;
                 offsetX = 0;
                 offsetY = (rect.height - renderedHeight) / 2;
             } else {
-                // Image is taller - letterbox left/right
+                // Image is taller than container - fits height, letterbox left/right
                 renderedHeight = rect.height;
                 renderedWidth = rect.height * imgAspect;
                 offsetX = (rect.width - renderedWidth) / 2;
@@ -656,24 +662,21 @@
             }
 
             // Calculate click position relative to the actual rendered image
-            const clickX = e.clientX - rect.left - offsetX;
-            const clickY = e.clientY - rect.top - offsetY;
+            const relativeX = e.clientX - rect.left - offsetX;
+            const relativeY = e.clientY - rect.top - offsetY;
 
             // Check if click is within the actual image area
-            if (clickX < 0 || clickX > renderedWidth || clickY < 0 || clickY > renderedHeight) {
+            if (relativeX < 0 || relativeX > renderedWidth || relativeY < 0 || relativeY > renderedHeight) {
                 console.log('Click outside image area');
                 return;
             }
 
-            // Calculate scale ratio
-            const scaleX = screenshotWidth / renderedWidth;
-            const scaleY = screenshotHeight / renderedHeight;
+            // Convert to actual screenshot coordinates (simple ratio)
+            const actualX = Math.round((relativeX / renderedWidth) * naturalWidth);
+            const actualY = Math.round((relativeY / renderedHeight) * naturalHeight);
 
-            // Convert to actual screenshot coordinates
-            const actualX = Math.round(clickX * scaleX);
-            const actualY = Math.round(clickY * scaleY);
-
-            console.log(`Click: display (${clickX.toFixed(0)}, ${clickY.toFixed(0)}) -> actual (${actualX}, ${actualY}), offset (${offsetX.toFixed(0)}, ${offsetY.toFixed(0)})`);
+            console.log(`Screenshot: ${naturalWidth}x${naturalHeight}, Rendered: ${renderedWidth.toFixed(0)}x${renderedHeight.toFixed(0)}, Offset: (${offsetX.toFixed(0)}, ${offsetY.toFixed(0)})`);
+            console.log(`Click: relative (${relativeX.toFixed(0)}, ${relativeY.toFixed(0)}) -> actual (${actualX}, ${actualY})`);
 
             // Show click indicator
             showClickIndicator(e.clientX, e.clientY);
