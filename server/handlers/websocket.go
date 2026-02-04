@@ -424,6 +424,10 @@ func (ap *AgentProxy) RequestPageState() (string, error) {
 }
 
 func (ap *AgentProxy) SendAction(action claude.BrowserAction) error {
+	return ap.sendActionWithRetry(action, 3) // Max 3 attempts
+}
+
+func (ap *AgentProxy) sendActionWithRetry(action claude.BrowserAction, maxAttempts int) error {
 	// Build message in the format agent expects (flat structure)
 	var msg []byte
 	var err error
@@ -466,13 +470,81 @@ func (ap *AgentProxy) SendAction(action claude.BrowserAction) error {
 		return err
 	}
 
+	// For input actions, use retry with verification
+	if action.Type == "input" && action.Value != "" {
+		return ap.sendInputWithVerification(msg, action.Value, maxAttempts)
+	}
+
+	// For other actions, just send and wait
 	if !relay.GlobalHub.SendToAgent(ap.agentToken, msg) {
 		return errAgentNotConnected
 	}
 
-	// Wait for the action to complete (increased for network latency)
-	time.Sleep(1000 * time.Millisecond)
+	// Wait for the action to complete
+	time.Sleep(800 * time.Millisecond)
 	return nil
+}
+
+// sendInputWithVerification sends input and verifies it was received correctly
+func (ap *AgentProxy) sendInputWithVerification(msg []byte, expectedValue string, maxAttempts int) error {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if !relay.GlobalHub.SendToAgent(ap.agentToken, msg) {
+			return errAgentNotConnected
+		}
+
+		// Wait for input to be processed
+		time.Sleep(600 * time.Millisecond)
+
+		// Verify the input was received correctly
+		pageStateData, err := relay.GlobalHub.RequestPageStateSync(ap.agentToken, 5*time.Second)
+		if err != nil {
+			log.Printf("Failed to verify input (attempt %d): %v", attempt, err)
+			if attempt < maxAttempts {
+				time.Sleep(800 * time.Millisecond)
+				continue
+			}
+			return nil // Don't fail, just proceed
+		}
+
+		// Parse page state to check focused input value
+		var pageState struct {
+			Inputs []struct {
+				Value   string `json:"value"`
+				Focused bool   `json:"focused"`
+			} `json:"inputs"`
+		}
+		if err := json.Unmarshal(pageStateData, &pageState); err != nil {
+			log.Printf("Failed to parse page state: %v", err)
+			return nil // Don't fail, just proceed
+		}
+
+		// Check if any focused input contains our expected value
+		for _, input := range pageState.Inputs {
+			if input.Focused {
+				// Check if the value ends with our expected input (it might have existing content)
+				if len(input.Value) >= len(expectedValue) {
+					suffix := input.Value[len(input.Value)-len(expectedValue):]
+					if suffix == expectedValue {
+						log.Printf("Input verified successfully (attempt %d): %s", attempt, expectedValue)
+						return nil
+					}
+				}
+				// Also check if value contains our input (for cases where we cleared first)
+				if input.Value == expectedValue {
+					log.Printf("Input verified successfully (attempt %d): %s", attempt, expectedValue)
+					return nil
+				}
+			}
+		}
+
+		log.Printf("Input verification failed (attempt %d), expected: %s", attempt, expectedValue)
+		if attempt < maxAttempts {
+			time.Sleep(800 * time.Millisecond)
+		}
+	}
+
+	log.Printf("Input verification failed after %d attempts, proceeding anyway", maxAttempts)
+	return nil // Don't fail the action, let the AI see the result and decide
 }
 
 var errAgentNotConnected = &agentError{"agent not connected"}
