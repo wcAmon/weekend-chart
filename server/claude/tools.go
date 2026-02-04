@@ -241,16 +241,41 @@ func (te *ToolExecutor) ExecuteTool(toolCall ToolCall) (ToolResult, string, erro
 			return result, "", nil
 		}
 
-		action := BrowserAction{
-			Type:  "input",
-			Value: input.Text,
+		// Safety: detect if AI mistakenly tried to type a key name
+		keyNames := map[string]bool{
+			"Tab": true, "tab": true, "TAB": true,
+			"Enter": true, "enter": true, "ENTER": true,
+			"Backspace": true, "backspace": true, "BACKSPACE": true,
+			"Escape": true, "escape": true, "ESC": true, "esc": true,
+			"Delete": true, "delete": true, "DEL": true, "del": true,
+			"ArrowUp": true, "ArrowDown": true, "ArrowLeft": true, "ArrowRight": true,
 		}
-		if err := te.agent.SendAction(action); err != nil {
-			result.Content = fmt.Sprintf("輸入失敗: %v", err)
-			result.IsError = true
+
+		if keyNames[input.Text] {
+			// Convert to press_key action instead
+			action := BrowserAction{
+				Type: "key",
+				Key:  input.Text,
+			}
+			if err := te.agent.SendAction(action); err != nil {
+				result.Content = fmt.Sprintf("按鍵失敗: %v", err)
+				result.IsError = true
+			} else {
+				result.Content = fmt.Sprintf("已按下按鍵: %s (自動轉換)", input.Text)
+				actionDescription = fmt.Sprintf("按下 %s", input.Text)
+			}
 		} else {
-			result.Content = fmt.Sprintf("已輸入文字: %s", input.Text)
-			actionDescription = fmt.Sprintf("輸入 \"%s\"", input.Text)
+			action := BrowserAction{
+				Type:  "input",
+				Value: input.Text,
+			}
+			if err := te.agent.SendAction(action); err != nil {
+				result.Content = fmt.Sprintf("輸入失敗: %v", err)
+				result.IsError = true
+			} else {
+				result.Content = fmt.Sprintf("已輸入文字: %s", input.Text)
+				actionDescription = fmt.Sprintf("輸入 \"%s\"", input.Text)
+			}
 		}
 
 	case "press_key":
