@@ -13,7 +13,7 @@ import (
 
 const (
 	apiEndpoint  = "https://api.openai.com/v1/chat/completions"
-	defaultModel = "gpt-4o-mini"
+	defaultModel = "gpt-4o"
 	maxTokens    = 4096
 )
 
