@@ -7,30 +7,33 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 const (
-	apiEndpoint = "https://api.anthropic.com/v1/messages"
-	model       = "claude-sonnet-4-20250514"
-	maxTokens   = 4096
+	apiEndpoint  = "https://api.openai.com/v1/chat/completions"
+	defaultModel = "gpt-4o-mini"
+	maxTokens    = 4096
 )
 
 // Client is the Claude API client
 type Client struct {
 	apiKey     string
+	model      string
 	httpClient *http.Client
 }
 
 // NewClient creates a new Claude API client
 func NewClient() *Client {
-	// Try CLAUDE_API_KEY first, then fall back to ANTHROPIC_API_KEY
-	apiKey := os.Getenv("CLAUDE_API_KEY")
-	if apiKey == "" {
-		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	model := os.Getenv("OPENAI_MODEL")
+	if model == "" {
+		model = defaultModel
 	}
 	return &Client{
 		apiKey: apiKey,
+		model:  model,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -63,38 +66,77 @@ type ConversationMessage struct {
 	Content []ContentBlock `json:"content"`
 }
 
-// Tool represents a Claude tool definition
+// Tool represents a tool definition
 type Tool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"input_schema"`
 }
 
-// APIRequest represents a request to the Claude API
-type APIRequest struct {
-	Model     string                `json:"model"`
-	MaxTokens int                   `json:"max_tokens"`
-	System    string                `json:"system,omitempty"`
-	Messages  []ConversationMessage `json:"messages"`
-	Tools     []Tool                `json:"tools,omitempty"`
+type openAIContentPart struct {
+	Type     string           `json:"type"`
+	Text     string           `json:"text,omitempty"`
+	ImageURL *openAIImageURL  `json:"image_url,omitempty"`
 }
 
-// APIResponse represents a response from the Claude API
-type APIResponse struct {
-	ID           string         `json:"id"`
-	Type         string         `json:"type"`
-	Role         string         `json:"role"`
-	Content      []ContentBlock `json:"content"`
-	Model        string         `json:"model"`
-	StopReason   string         `json:"stop_reason"`
-	StopSequence string         `json:"stop_sequence,omitempty"`
-	Usage        struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+type openAIImageURL struct {
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type openAIFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+type openAITool struct {
+	Type     string         `json:"type"`
+	Function openAIFunction `json:"function"`
+}
+
+type openAIToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type openAIMessage struct {
+	Role       string           `json:"role"`
+	Content    interface{}      `json:"content,omitempty"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+}
+
+// openAIChatRequest represents a request to the OpenAI Chat Completions API
+type openAIChatRequest struct {
+	Model     string         `json:"model"`
+	Messages  []openAIMessage `json:"messages"`
+	Tools     []openAITool    `json:"tools,omitempty"`
+	MaxTokens int            `json:"max_tokens,omitempty"`
+}
+
+// openAIChatResponse represents a response from the OpenAI Chat Completions API
+type openAIChatResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Message struct {
+			Role      string           `json:"role"`
+			Content   json.RawMessage  `json:"content"`
+			ToolCalls []openAIToolCall `json:"tool_calls,omitempty"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
 }
 
-// ToolCall represents a tool call from Claude
+// ToolCall represents a tool call from the model
 type ToolCall struct {
 	ID    string          `json:"id"`
 	Name  string          `json:"name"`
@@ -118,12 +160,33 @@ const SystemPrompt = `你是一個瀏覽器自動化助手。你可以看到用�
 可用工具：
 - take_screenshot: 截取當前畫面
 - click: 點擊指定座標
-- type_text: 輸入文字
-- press_key: 按下按鍵
+- type_text: 輸入文字（只輸入純文字，不包含任何按鍵）
+- press_key: 按下按鍵（如 Tab、Enter、Escape、Backspace 等）
+- select_all: 全選當前輸入框內容 (Ctrl+A)
 - navigate: 導航到網址
 - scroll: 滾動頁面
 
-規則：
+清除輸入框內容：
+1. 先點擊該輸入框
+2. 使用 select_all 全選內容
+3. 使用 press_key("Backspace") 刪除
+
+重要：表單填寫規則
+填寫登入表單或其他多欄位表單時，必須分步驟操作：
+1. 先點擊第一個輸入框
+2. 使用 type_text 輸入該欄位的值（只輸入純文字）
+3. 使用 press_key 按下 "Tab" 鍵切換到下一個欄位
+4. 使用 type_text 輸入下一個欄位的值
+5. 重複步驟 3-4 直到所有欄位填完
+6. 最後按 Enter 或點擊提交按鈕
+
+錯誤示範：type_text("20152Tab0538") ← 這是錯的！Tab 會被當成文字輸入
+正確示範：
+  - type_text("20152")
+  - press_key("Tab")
+  - type_text("0538")
+
+一般規則：
 1. 執行動作前，先描述你看到了什麼以及你要做什麼
 2. 點擊時，精確計算目標元素的中心座標
 3. 執行動作後，截取新的截圖確認結果
@@ -135,18 +198,172 @@ const SystemPrompt = `你是一個瀏覽器自動化助手。你可以看到用�
 - 然後調用工具執行動作
 - 最後確認結果`
 
-// Chat sends a chat message to Claude with optional screenshot
-func (c *Client) Chat(messages []ConversationMessage, tools []Tool) (*ChatResponse, error) {
-	if c.apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
+func toOpenAITools(tools []Tool) []openAITool {
+	if len(tools) == 0 {
+		return nil
 	}
 
-	req := APIRequest{
-		Model:     model,
+	out := make([]openAITool, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, openAITool{
+			Type: "function",
+			Function: openAIFunction{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.InputSchema,
+			},
+		})
+	}
+	return out
+}
+
+func toOpenAIMessages(messages []ConversationMessage) []openAIMessage {
+	out := make([]openAIMessage, 0, len(messages)+1)
+	out = append(out, openAIMessage{
+		Role:    "system",
+		Content: SystemPrompt,
+	})
+
+	for _, msg := range messages {
+		hasToolUse := false
+		hasToolResult := false
+		hasImage := false
+		for _, block := range msg.Content {
+			switch block.Type {
+			case "tool_use":
+				hasToolUse = true
+			case "tool_result":
+				hasToolResult = true
+			case "image":
+				hasImage = true
+			}
+		}
+
+		if hasToolResult && !hasToolUse {
+			for _, block := range msg.Content {
+				if block.Type != "tool_result" {
+					continue
+				}
+				out = append(out, openAIMessage{
+					Role:       "tool",
+					ToolCallID: block.ToolUseID,
+					Content:    block.Content,
+				})
+			}
+			continue
+		}
+
+		if hasToolUse {
+			var toolCalls []openAIToolCall
+			var textParts []string
+			for _, block := range msg.Content {
+				switch block.Type {
+				case "text":
+					textParts = append(textParts, block.Text)
+				case "tool_use":
+					tc := openAIToolCall{
+						ID:   block.ID,
+						Type: "function",
+					}
+					tc.Function.Name = block.Name
+					tc.Function.Arguments = string(block.Input)
+					toolCalls = append(toolCalls, tc)
+				}
+			}
+
+			var content interface{}
+			if len(textParts) > 0 {
+				content = strings.Join(textParts, "")
+			}
+
+			out = append(out, openAIMessage{
+				Role:      "assistant",
+				Content:   content,
+				ToolCalls: toolCalls,
+			})
+			continue
+		}
+
+		if hasImage {
+			parts := make([]openAIContentPart, 0, len(msg.Content))
+			for _, block := range msg.Content {
+				switch block.Type {
+				case "text":
+					parts = append(parts, openAIContentPart{
+						Type: "text",
+						Text: block.Text,
+					})
+				case "image":
+					if block.Source == nil {
+						continue
+					}
+					url := "data:" + block.Source.MediaType + ";base64," + block.Source.Data
+					parts = append(parts, openAIContentPart{
+						Type: "image_url",
+						ImageURL: &openAIImageURL{
+							URL:    url,
+							Detail: "auto",
+						},
+					})
+				}
+			}
+			out = append(out, openAIMessage{
+				Role:    msg.Role,
+				Content: parts,
+			})
+			continue
+		}
+
+		var textParts []string
+		for _, block := range msg.Content {
+			if block.Type == "text" {
+				textParts = append(textParts, block.Text)
+			}
+		}
+		out = append(out, openAIMessage{
+			Role:    msg.Role,
+			Content: strings.Join(textParts, ""),
+		})
+	}
+
+	return out
+}
+
+func parseContentText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+
+	var parts []openAIContentPart
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var sb strings.Builder
+		for _, p := range parts {
+			if p.Type == "text" {
+				sb.WriteString(p.Text)
+			}
+		}
+		return sb.String()
+	}
+
+	return ""
+}
+
+// Chat sends a chat message to OpenAI with optional screenshot
+func (c *Client) Chat(messages []ConversationMessage, tools []Tool) (*ChatResponse, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("OPENAI_API_KEY not set")
+	}
+
+	req := openAIChatRequest{
+		Model:     c.model,
 		MaxTokens: maxTokens,
-		System:    SystemPrompt,
-		Messages:  messages,
-		Tools:     tools,
+		Messages:  toOpenAIMessages(messages),
+		Tools:     toOpenAITools(tools),
 	}
 
 	jsonBody, err := json.Marshal(req)
@@ -160,8 +377,7 @@ func (c *Client) Chat(messages []ConversationMessage, tools []Tool) (*ChatRespon
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", c.apiKey)
-	httpReq.Header.Set("anthropic-version", "2023-06-01")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -178,27 +394,26 @@ func (c *Client) Chat(messages []ConversationMessage, tools []Tool) (*ChatRespon
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	var apiResp APIResponse
+	var apiResp openAIChatResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	// Parse response content
 	chatResp := &ChatResponse{
-		StopReason: apiResp.StopReason,
 	}
-	chatResp.Usage.InputTokens = apiResp.Usage.InputTokens
-	chatResp.Usage.OutputTokens = apiResp.Usage.OutputTokens
+	chatResp.Usage.InputTokens = apiResp.Usage.PromptTokens
+	chatResp.Usage.OutputTokens = apiResp.Usage.CompletionTokens
 
-	for _, block := range apiResp.Content {
-		switch block.Type {
-		case "text":
-			chatResp.TextContent += block.Text
-		case "tool_use":
+	if len(apiResp.Choices) > 0 {
+		msg := apiResp.Choices[0].Message
+		chatResp.TextContent = parseContentText(msg.Content)
+		for _, tc := range msg.ToolCalls {
+			input := json.RawMessage(tc.Function.Arguments)
 			chatResp.ToolCalls = append(chatResp.ToolCalls, ToolCall{
-				ID:    block.ID,
-				Name:  block.Name,
-				Input: block.Input,
+				ID:    tc.ID,
+				Name:  tc.Function.Name,
+				Input: input,
 			})
 		}
 	}
@@ -326,13 +541,10 @@ type ToolResult struct {
 	IsError   bool   `json:"is_error,omitempty"`
 }
 
-// GetAPIKey returns the API key status (for debugging)
+// GetAPIKey returns the API key status (redacted for safety).
 func (c *Client) GetAPIKey() string {
 	if c.apiKey == "" {
 		return "(not set)"
 	}
-	if len(c.apiKey) > 10 {
-		return c.apiKey[:10] + "..."
-	}
-	return c.apiKey
+	return "(redacted)"
 }

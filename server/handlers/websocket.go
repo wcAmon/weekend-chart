@@ -58,9 +58,13 @@ type ActionInfo struct {
 	Success     bool   `json:"success"`
 }
 
-// ScreenshotData represents screenshot message from agent
+// ScreenshotData represents screenshot message from agent (flat structure)
 type ScreenshotData struct {
-	Image string `json:"image"`
+	Type   string `json:"type"`
+	Image  string `json:"image"`
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }
 
 // HandleAgentWS handles WebSocket connections from agents
@@ -181,10 +185,13 @@ func handleAgentMessage(ac *relay.AgentConn, wsMsg WSMessage, rawMsg []byte) {
 		ac.Send <- resp
 
 	case "screenshot":
-		// Cache the screenshot
+		// Cache the screenshot - agent sends flat structure, not nested in "data"
 		var screenshotData ScreenshotData
-		if err := json.Unmarshal(wsMsg.Data, &screenshotData); err == nil && screenshotData.Image != "" {
+		if err := json.Unmarshal(rawMsg, &screenshotData); err == nil && screenshotData.Image != "" {
 			relay.GlobalHub.UpdateScreenshotCache(ac.Token, screenshotData.Image)
+			log.Printf("Screenshot cached for agent %s (size: %d)", ac.Token[:10], len(screenshotData.Image))
+		} else {
+			log.Printf("Failed to parse screenshot from agent %s: %v", ac.Token[:10], err)
 		}
 		// Forward to connected user
 		relay.GlobalHub.BroadcastToAgentUsers(ac.Token, rawMsg)
@@ -490,7 +497,7 @@ func handleChatMessage(uc *relay.UserConn, agentToken, message string) {
 		sendChatResponse(uc, "system", "", screenshot, nil)
 	}
 
-	// Create Claude client and call API
+	// Create OpenAI client and call API
 	client := claude.NewClient()
 	tools := claude.GetBrowserTools()
 
@@ -511,9 +518,12 @@ func handleChatMessage(uc *relay.UserConn, agentToken, message string) {
 	for i := 0; i < maxIterations; i++ {
 		messages := conv.GetMessages()
 
+		// Validate and clean messages to ensure tool_use/tool_result pairs are intact
+		messages = claude.ValidateAndClean(messages)
+
 		resp, err := client.Chat(messages, tools)
 		if err != nil {
-			log.Printf("Claude API error: %v", err)
+			log.Printf("OpenAI API error: %v", err)
 			sendChatError(uc, "AI 服務發生錯誤: "+err.Error())
 			return
 		}
@@ -577,7 +587,7 @@ func handleChatMessage(uc *relay.UserConn, agentToken, message string) {
 			}
 		}
 
-		// Get screenshot after actions and include it in the conversation for Claude to see
+		// Get screenshot after actions and include it in the conversation for the model to see
 		var screenshotForClaude string
 		if hasNonScreenshotAction {
 			time.Sleep(500 * time.Millisecond)

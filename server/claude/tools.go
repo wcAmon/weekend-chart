@@ -100,6 +100,15 @@ func GetBrowserTools() []Tool {
 				"required": ["direction"]
 			}`),
 		},
+		{
+			Name:        "select_all",
+			Description: "全選當前焦點輸入框的內容 (Ctrl+A)，常用於清除輸入框：先 select_all 再 press_key Backspace",
+			InputSchema: json.RawMessage(`{
+				"type": "object",
+				"properties": {},
+				"required": []
+			}`),
+		},
 	}
 }
 
@@ -297,6 +306,18 @@ func (te *ToolExecutor) ExecuteTool(toolCall ToolCall) (ToolResult, string, erro
 		} else {
 			result.Content = fmt.Sprintf("已向%s滾動 %d 像素", input.Direction, input.Amount)
 			actionDescription = fmt.Sprintf("向%s滾動", input.Direction)
+		}
+
+	case "select_all":
+		action := BrowserAction{
+			Type: "select_all",
+		}
+		if err := te.agent.SendAction(action); err != nil {
+			result.Content = fmt.Sprintf("全選失敗: %v", err)
+			result.IsError = true
+		} else {
+			result.Content = "已全選輸入框內容"
+			actionDescription = "全選"
 		}
 
 	default:

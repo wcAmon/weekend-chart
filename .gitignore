@@ -8,6 +8,9 @@ node_modules/
 # Build outputs
 agent/build/*.exe
 *.exe
+weekend-chart-server
+agent/weekend-chart-server
+server/weekend-chart-server
 
 # Database
 data/*.db

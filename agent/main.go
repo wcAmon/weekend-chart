@@ -326,6 +326,14 @@ func handleMessage(msg Message) {
 		time.Sleep(300 * time.Millisecond)
 		sendCurrentState()
 
+	case "select_all":
+		log.Printf("全選")
+		if err := chrome.SelectAll(); err != nil {
+			log.Printf("全選失敗: %v", err)
+		}
+		time.Sleep(200 * time.Millisecond)
+		sendCurrentState()
+
 	case "request_screenshot":
 		sendCurrentState()
 	}
