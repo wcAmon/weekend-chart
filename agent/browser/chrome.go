@@ -160,50 +160,18 @@ func (b *Browser) SelectAll() error {
 	ctx, cancel := context.WithTimeout(b.ctx, 5*time.Second)
 	defer cancel()
 
-	// Send Ctrl+A using CDP input events
+	// Use JavaScript to select all text in the focused input/textarea element
 	return chromedp.Run(ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// Key down Control
-			if err := input.DispatchKeyEvent(input.KeyDown).
-				WithKey("Control").
-				WithCode("ControlLeft").
-				WithWindowsVirtualKeyCode(17).
-				WithNativeVirtualKeyCode(17).
-				WithModifiers(2). // Ctrl modifier
-				Do(ctx); err != nil {
-				return err
-			}
-
-			// Key down 'a' with Control modifier
-			if err := input.DispatchKeyEvent(input.KeyDown).
-				WithKey("a").
-				WithCode("KeyA").
-				WithWindowsVirtualKeyCode(65).
-				WithNativeVirtualKeyCode(65).
-				WithModifiers(2). // Ctrl modifier
-				Do(ctx); err != nil {
-				return err
-			}
-
-			// Key up 'a'
-			if err := input.DispatchKeyEvent(input.KeyUp).
-				WithKey("a").
-				WithCode("KeyA").
-				WithWindowsVirtualKeyCode(65).
-				WithNativeVirtualKeyCode(65).
-				WithModifiers(2).
-				Do(ctx); err != nil {
-				return err
-			}
-
-			// Key up Control
-			return input.DispatchKeyEvent(input.KeyUp).
-				WithKey("Control").
-				WithCode("ControlLeft").
-				WithWindowsVirtualKeyCode(17).
-				WithNativeVirtualKeyCode(17).
-				Do(ctx)
-		}),
+		chromedp.Evaluate(`
+			(function() {
+				var el = document.activeElement;
+				if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+					el.select();
+					return 'selected';
+				}
+				return 'no input focused';
+			})()
+		`, nil),
 	)
 }
 
